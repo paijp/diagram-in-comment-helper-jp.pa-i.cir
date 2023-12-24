@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.3] - 2023-12-24
+### Changed
+- Fix comments about diagram-in-comment in map32mx2-28.php.
+
 ## [0.0.2] - 2023-12-24
 ### Changed
 - Change name: diagram-in-code -> diagram-in-comment.

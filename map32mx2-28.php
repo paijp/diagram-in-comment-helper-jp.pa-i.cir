@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 
 /*jp.pa-i/html
-<a href="https://github.com/paijp/diagram-in-comment">How to generate this?</a>
+<p><a href="https://github.com/paijp/diagram-in-comment">How to generate this?</a></p>
 */
 /* output: https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/map32mx2-28.html */
 
@@ -35,7 +35,7 @@ r}
 /*jp.pa-i/html
 <pre>
 <h1>sample</h1>
-/*jp.pa-i/map32mx2-28
+/*jp.pa-i.cir/map32mx2-28
 LED1	RPB6
 P2W	RPB3	UTX1
 W2P	RPB2	URX1
