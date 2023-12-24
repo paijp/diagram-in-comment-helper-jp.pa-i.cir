@@ -2,7 +2,7 @@
 
 /*
 
-	diagram-in-code https://github.com/paijp/diagram-in-code
+	diagram-in-comment https://github.com/paijp/diagram-in-comment
 	
 	Copyright (c) 2023 paijp
 
@@ -14,7 +14,7 @@ You should have received a copy of the GNU General Public License along with thi
 
 */
 
-/*syntaxdiagram
+/*jp.pa-i/syntaxdiagram
 {[pin name on the project
 {( 
 [port name
@@ -25,7 +25,7 @@ r}
 }
 */
 
-/*html
+/*jp.pa-i/html
 <pre>
 <h1>sample</h1>
 /*jp.pa-i/map32mx2-28
@@ -35,7 +35,7 @@ W2P	RPB2	URX1
 #<h1>&darr;</h1>
 */
 
-/*html
+/*jp.pa-i/html
 <h1>This shows....</h1>
 - LED1 is on pin 9(5V tolerant).
 
