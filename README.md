@@ -1,6 +1,6 @@
 # diagram-in-comment helper(circuit).
 
-- Please see https://paijp.github.io/diagram-in-comment/
+- Please see https://github.com/paijp/diagram-in-comment/
 
 ```
 $ git clone https://github.com/paijp/diagram-in-comment
