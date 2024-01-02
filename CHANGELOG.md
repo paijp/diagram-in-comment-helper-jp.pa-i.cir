@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [0.0.4] - 2024-01-02
 ### Changed
 - Add a syntax-diagram and samples to cir.php.
 - Add an alternative command '[' ']' for '<' '>' to to avoid parsing it as an HTML tag in cir.php.
