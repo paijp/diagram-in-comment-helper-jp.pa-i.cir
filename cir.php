@@ -184,6 +184,45 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 	list($line) = explode("#", $line, 2);
 	$line = trim($line);
 	
+/*jp.pa-i/syntaxdiagram
+{(/*
+(jp.pa-i.cir/cir
+( 
+{(sip
+|(dip
+|(qfp
+}[num
+{|(
+[name
+}
+|{|(2
+|(4
+|(6
+|(8
+|((
+|()
+|([
+[name
+(]
+|([[
+[name
+(]
+|({c
+[name
+(}
+|({r
+[name
+(}
+|({d
+[name
+(}
+|({D
+[name
+(}
+r}}{|(#
+{|[comment
+}}
+*/
 	if (preg_match('!/[*][^ \t]+[ \t]+([-_A-Za-z]+)([0-9]+)(.*)!', $line, $a)) {
 		$num = (int)$a[2];
 		$par = trim($a[3]);
@@ -298,6 +337,18 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 				$x += $vx * $len;
 				$y += $vy * $len;
 				continue 2;
+			case	"[":
+				list($s, $line) = explode("]", $line, 2);
+				$color = 0;
+				if (substr($s, 0, 1) == "[") {
+					$color = 1;
+					$s = substr($s, 1);
+				}
+				$len = 64;
+				$midlist[] = new hexobject($x0, $y0, $vx * $len, $vy * $len, $s, $color);
+				$x += $vx * $len;
+				$y += $vy * $len;
+				continue 2;
 			case	"{":
 				list($s, $line) = explode("}", $line, 2);
 				$c = substr($s, 0, 1);
@@ -358,5 +409,64 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 		}
 	}
 }
+
+
+/*jp.pa-i/html
+<pre>
+<h1>SIP</h1>
+/*jp.pa-i.cir/cir sip5 CN1
+2[P1]
+22[P2]
+
+22[P4]26[P4A]6[[P4B]
+266888(4[P5])6[P5A]
+
+#<h1>&darr;</h1>
+*/
+
+/*jp.pa-i/html
+<h1>DIP</h1>
+/*jp.pa-i.cir/cir dip8 U1
+22(4[OUTA])2{r10k}2(688888)2{r10k}2[[G]
+
+22[INA]
+22[[G]
+88[INB]
+
+888(4[OUTB])8{r10k}8(6222222)8{r10k}8[[G]
+844(4[[V])2{c104}24[[G]
+#<h1>&darr;</h1>
+*/
+
+/*jp.pa-i/html
+<h1>QFP</h1>
+/*jp.pa-i.cir/cir qfp20 U2
+22{d}2{r150}2[[G]
+22{D}2{r150}2[[V]
+
+22[P4]
+22[P5]
+66[P6]
+66[P7]
+66[P8]
+66[P9]
+66[P10]
+88[P11]
+88[P12]
+88[P13]
+88[P14]
+88[P15]
+44[P16]
+44[P17]
+44[P18]
+44[P19]
+44[P20]
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+</pre>
+*/
 
 
