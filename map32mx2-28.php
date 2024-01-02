@@ -14,12 +14,10 @@ You should have received a copy of the GNU General Public License along with thi
 
 */
 
-
 /*jp.pa-i/html
 <p><a href="https://github.com/paijp/diagram-in-comment">How to generate this?</a></p>
 */
-/* output: https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/map32mx2-28.html */
-
+/* generated HTML: https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/map32mx2-28.html */
 
 /*jp.pa-i/syntaxdiagram
 {[pin name on the project
