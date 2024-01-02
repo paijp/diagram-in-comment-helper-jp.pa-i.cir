@@ -414,19 +414,16 @@ r}}{|(#
 /*jp.pa-i/html
 <pre>
 <h1>SIP</h1>
-/*jp.pa-i.cir/cir sip5 CN1
-2[P1]
-22[P2]
-
-22[P4]26[P4A]6[[P4B]
-266888(4[P5])6[P5A]
-
+/*jp.pa-i.cir/cir sip3 U1
+22(4[VOUT])2{c104}2[[G]
+22(66[VIN])2{c104}2[[G]
+22222[[G]
 #<h1>&darr;</h1>
 */
 
 /*jp.pa-i/html
 <h1>DIP</h1>
-/*jp.pa-i.cir/cir dip8 U1
+/*jp.pa-i.cir/cir dip8 U2
 22(4[OUTA])2{r10k}2(688888)2{r10k}2[[G]
 
 22[INA]
@@ -440,11 +437,11 @@ r}}{|(#
 
 /*jp.pa-i/html
 <h1>QFP</h1>
-/*jp.pa-i.cir/cir qfp20 U2
+/*jp.pa-i.cir/cir qfp20 U3
 22{d}2{r150}2[[G]
 22{D}2{r150}2[[V]
 
-22[P4]
+22[P4]2{r10k}2[[G]
 22[P5]
 66[P6]
 66[P7]

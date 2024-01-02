@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased]
 ### Changed
 - Add a syntax-diagram and samples to cir.php.
+- Add an alternative command '[' ']' for '<' '>' to to avoid parsing it as an HTML tag in cir.php.
+- Change README.md.
 
 ## [0.0.3] - 2023-12-24
 ### Changed
