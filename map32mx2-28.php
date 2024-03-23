@@ -20,7 +20,7 @@ You should have received a copy of the GNU General Public License along with thi
 /* generated HTML: https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/map32mx2-28.html */
 
 /*jp.pa-i/syntaxdiagram
-{[pin name on the project
+{[pin name on this project
 {( 
 [port name
 r}
@@ -42,7 +42,7 @@ W2P	RPB2	URX1
 
 /*jp.pa-i/html
 <h1>This shows....</h1>
-- LED1 is on pin 9(5V tolerant).
+- LED1 is on pin 15(5V tolerant).
 
 - P2W is on pin 7.
 - RPB3R = 1; will be needed.
