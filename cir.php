@@ -183,15 +183,14 @@ $poslist = array();
 foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 	list($line) = explode("#", $line, 2);
 	$line = trim($line);
-
+	
 /*jp.pa-i/html
 <p><a href="https://github.com/paijp/diagram-in-comment">How to generate this?</a></p>
 */
 /* generated HTML: https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/cir.html */
-	
+
 /*jp.pa-i/syntaxdiagram
-{(/*
-(jp.pa-i.cir/cir
+{(/*jp.pa-i.cir/cir
 ( 
 {(sip
 |(dip
