@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pcbgrid20 preview</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 6px 12px; background: #eee; border-bottom: 1px solid #ccc; font-size: 13px; }
+  header a { color: #06c; }
+  main { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pane + .pane { border-left: 1px solid #ccc; }
+  .pane h2 { margin: 0; padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; font-weight: normal; color: #555; }
+  textarea { flex: 1; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
+  #preview { flex: 1; overflow: auto; padding: 10px; background: #fff; }
+  #preview svg { display: block; }
+</style>
+</head>
+<body>
+<header>
+  pcbgrid20 preview (JavaScript / SVG) &mdash;
+  テキストを編集するとリアルタイムでプレビューされます。
+  構文は
+  <a href="pcbgrid20.html" target="_blank">pcbgrid20.html</a>
+  を参照してください。
+</header>
+<main>
+  <div class="pane">
+    <h2>input</h2>
+    <textarea id="src" spellcheck="false">** 3,3r7,0,0
+A	22
+B	223366
+C	88(44)66
+D
+
+** 6,5l4,3,0
+5	22{104}22
+6	22{10k}}22
+7	26{K(A}}}66
+8
+</textarea>
+  </div>
+  <div class="pane">
+    <h2>preview</h2>
+    <div id="preview"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const W = 720, H = 450;
+const GRID = 30;
+// GD font 5 is roughly 9x15 monospace.
+const FW = 9, FH = 15;
+
+function escXml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;"
+  }[c]));
+}
+
+function render(text) {
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
+  out.push(`<rect width="${W}" height="${H}" fill="#c0ffff"/>`);
+
+  // grid dots
+  const dots = [];
+  for (let x = 0; x < W; x += GRID)
+    for (let y = 0; y < H; y += GRID)
+      dots.push(`M${x},${y}h2v2h-2z`);
+  out.push(`<path fill="#f00" d="${dots.join("")}"/>`);
+
+  const strList = [];   // horizontal text
+  const strUpList = []; // rotated (90 CCW) text
+
+  let px = 0, py = 0, vx = 0, vy = 0;
+
+  const lines = text.split(/\r\n|\r|\n/);
+  for (const raw of lines) {
+    if (/^\//.test(raw)) continue;
+    if (/^#/.test(raw)) continue;
+    const line = raw.split("#")[0];
+
+    let m;
+    if (m = line.match(/^\*\*[ \t]*(\d+),(\d+)([ltrbud])(\d+),(\d+),(\d+)/)) {
+      const gx = +m[2], gy = +m[1], dir = m[3];
+      const len = +m[4], lw = +m[5], rw = +m[6];
+      px = gx * GRID;
+      py = (14 - gy) * GRID;
+      let l = px, r = px, t = py, b = py;
+      vx = 0; vy = 0;
+      switch (dir) {
+        case "l":
+          b += (len - 1) * GRID; r += lw * GRID; l -= rw * GRID; vy = GRID; break;
+        case "t": case "u":
+          l -= (len - 1) * GRID; b += lw * GRID; t -= rw * GRID; vx = -GRID; break;
+        case "r":
+          t -= (len - 1) * GRID; l -= lw * GRID; r += rw * GRID; vy = -GRID; break;
+        case "b": case "d":
+          r += (len - 1) * GRID; t -= lw * GRID; b += rw * GRID; vx = GRID; break;
+      }
+      l -= 15; t -= 15; r += 15; b += 15;
+      out.push(`<rect x="${l}" y="${t}" width="${r - l}" height="${b - t}" fill="none" stroke="#f00" stroke-width="2"/>`);
+      continue;
+    }
+
+    if (m = line.match(/^\*\*[ \t]*(\d+),(\d+)qr/)) {
+      const gx = +m[2], gy = +m[1];
+      strUpList.push({ x: gx * GRID, y: (14 - gy) * GRID, text: "[QR omitted]" });
+      continue;
+    }
+
+    // pinname + trace: split on the first run of whitespace
+    const mm = line.match(/^([^ \t]*)(?:[ \t]+(.*))?$/);
+    if (!mm) continue;
+    const pinname = mm[1];
+    let s = (mm[2] || "").trim();
+    if (!pinname && !s) continue;
+
+    if (pinname) {
+      const w2 = pinname.length * (FW / 2 | 0);
+      if (vx) strList.push({ x: px - w2, y: py - 8, text: pinname });
+      else    strUpList.push({ x: px - 8, y: py + w2, text: pinname });
+    }
+
+    let x = px, y = py;
+    let lastdir = "";
+    const stack = [];
+
+    while (s) {
+      const c = s[0];
+      s = s.slice(1);
+
+      if (c === "<" || c === "{") {
+        const bm = s.match(/^([^>}]*)([>}]*)(.*)$/);
+        s = bm[3];
+        const label = (bm[1] || "").trim();
+        const v = bm[2].length * GRID;
+
+        let sx = x, sy = y, ex = x, ey = y, wx = 0, wy = 0;
+        let box = null;
+        switch (lastdir) {
+          case "4": {
+            ey += (wy = v) - GRID; sy -= GRID;
+            const t = sy + 8, b = ey - 8, l = sx - 8, r = sx + 8;
+            box = [[sx, sy, l, t], [l, t, l, b], [l, b, ex, ey],
+                   [sx, sy, r, t], [r, t, r, b], [r, b, ex, ey]];
+            break;
+          }
+          case "8": {
+            ex += (wx = -v) + GRID; sx += GRID;
+            const t = sy - 8, b = sy + 8, l = ex + 8, r = sx - 8;
+            box = [[sx, sy, r, t], [r, t, l, t], [l, t, ex, ey],
+                   [sx, sy, r, b], [r, b, l, b], [l, b, ex, ey]];
+            break;
+          }
+          case "6": {
+            ey += (wy = -v) + GRID; sy += GRID;
+            const t = ey + 8, b = sy - 8, l = sx - 8, r = sx + 8;
+            box = [[sx, sy, l, b], [l, b, l, t], [l, t, ex, ey],
+                   [sx, sy, r, b], [r, b, r, t], [r, t, ex, ey]];
+            break;
+          }
+          case "2": {
+            ex += (wx = v) - GRID; sx -= GRID;
+            const t = sy - 8, b = sy + 8, l = sx + 8, r = ex - 8;
+            box = [[sx, sy, l, t], [l, t, r, t], [r, t, ex, ey],
+                   [sx, sy, l, b], [l, b, r, b], [r, b, ex, ey]];
+            break;
+          }
+        }
+        if (!box) continue;
+
+        let d = "";
+        for (const [x1, y1, x2, y2] of box) d += `M${x1},${y1}L${x2},${y2}`;
+        out.push(`<path d="${d}" fill="none" stroke="#000" stroke-width="2"/>`);
+
+        const w2 = label.length * (FW / 2 | 0);
+        if (wx) strList.push({ x: sx - w2 + wx / 2, y: sy - 8, text: label });
+        else    strUpList.push({ x: sx - 8, y: sy + w2 + wy / 2, text: label });
+
+        x = ex; y = ey;
+        continue;
+      }
+
+      const x0 = x, y0 = y;
+      lastdir = c;
+      let moved = true;
+      switch (c) {
+        case "(": stack.unshift([x, y]); moved = false; break;
+        case ")": if (stack.length) { const p = stack.shift(); x = p[0]; y = p[1]; } moved = false; break;
+        case "1": y += GRID; x += GRID; break;
+        case "2": x += GRID; break;
+        case "3": y -= GRID; x += GRID; break;
+        case "4": y += GRID; break;
+        case "6": y -= GRID; break;
+        case "7": y += GRID; x -= GRID; break;
+        case "8": x -= GRID; break;
+        case "9": y -= GRID; x -= GRID; break;
+        default: moved = false; break;
+      }
+      if (moved) {
+        const nc = s[0];
+        if (nc !== "<" && nc !== "{") {
+          out.push(`<line x1="${x0}" y1="${y0}" x2="${x}" y2="${y}" stroke="#f00" stroke-width="8" stroke-linecap="round"/>`);
+        }
+      }
+    }
+
+    px += vx;
+    py += vy;
+  }
+
+  // text (drawn last so it stays on top)
+  for (const s of strList) {
+    out.push(`<text x="${s.x}" y="${s.y + FH - 2}" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#000">${escXml(s.text)}</text>`);
+  }
+  for (const s of strUpList) {
+    out.push(`<text transform="rotate(-90 ${s.x} ${s.y})" x="${s.x}" y="${s.y + FH - 2}" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#000">${escXml(s.text)}</text>`);
+  }
+
+  out.push(`</svg>`);
+  return out.join("");
+}
+
+const src = document.getElementById("src");
+const preview = document.getElementById("preview");
+function update() { preview.innerHTML = render(src.value); }
+src.addEventListener("input", update);
+update();
+</script>
+</body>
+</html>
