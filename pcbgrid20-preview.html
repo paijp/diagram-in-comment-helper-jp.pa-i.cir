@@ -6,53 +6,43 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   body { display: flex; flex-direction: column; }
-  header { padding: 6px 12px; background: #eee; border-bottom: 1px solid #ccc; font-size: 13px; }
-  header a { color: #06c; }
-  main { flex: 1; display: flex; min-height: 0; }
-  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .pane + .pane { border-left: 1px solid #ccc; }
-  .pane h2 { margin: 0; padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; font-weight: normal; color: #555; }
-  textarea { flex: 1; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
-  #preview { flex: 1; overflow: auto; padding: 10px; background: #fff; }
+  header { padding: 6px 12px; background: #eee; border-bottom: 1px solid #ccc; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+  header a { color: #06c; cursor: pointer; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  header .spacer { flex: 1; }
+  header input.title { font-size: 13px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 3px; width: 260px; }
+  header button { font-size: 13px; padding: 3px 10px; }
+
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #preview { flex: 1; overflow: auto; padding: 10px; background: #fff; border-bottom: 1px solid #ccc; min-height: 0; }
   #preview svg { display: block; }
+  #src { height: 40%; min-height: 120px; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
+  .pane-label { padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; color: #555; }
+
+  /* index page */
+  #index { padding: 20px 24px; overflow: auto; }
+  #index h1 { font-size: 18px; margin: 0 0 12px 0; }
+  #index ul { list-style: none; padding: 0; margin: 0 0 16px 0; }
+  #index li { padding: 6px 8px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
+  #index li a { color: #06c; text-decoration: none; flex: 1; cursor: pointer; }
+  #index li a:hover { text-decoration: underline; }
+  #index li .meta { color: #888; font-size: 12px; }
+  #index li button { font-size: 12px; }
+  #index .empty { color: #888; font-style: italic; }
+  #index button.new { font-size: 14px; padding: 6px 14px; }
 </style>
 </head>
 <body>
-<header>
-  pcbgrid20 preview (JavaScript / SVG) &mdash;
-  テキストを編集するとリアルタイムでプレビューされます。
-  構文は
-  <a href="pcbgrid20.html" target="_blank">pcbgrid20.html</a>
-  を参照してください。
-</header>
-<main>
-  <div class="pane">
-    <h2>input</h2>
-    <textarea id="src" spellcheck="false">** 3,3r7,0,0
-A	22
-B	223366
-C	88(44)66
-D
 
-** 6,5l4,3,0
-5	22{104}22
-6	22{10k}}22
-7	26{K(A}}}66
-8
-</textarea>
-  </div>
-  <div class="pane">
-    <h2>preview</h2>
-    <div id="preview"></div>
-  </div>
-</main>
+<div id="app"></div>
 
 <script>
 "use strict";
 
+/* ---------- Renderer (SVG) ---------- */
+
 const W = 720, H = 450;
 const GRID = 30;
-// GD font 5 is roughly 9x15 monospace.
 const FW = 9, FH = 15;
 
 function escXml(s) {
@@ -66,20 +56,17 @@ function render(text) {
   out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
   out.push(`<rect width="${W}" height="${H}" fill="#c0ffff"/>`);
 
-  // grid dots
   const dots = [];
   for (let x = 0; x < W; x += GRID)
     for (let y = 0; y < H; y += GRID)
       dots.push(`M${x},${y}h2v2h-2z`);
   out.push(`<path fill="#f00" d="${dots.join("")}"/>`);
 
-  const strList = [];   // horizontal text
-  const strUpList = []; // rotated (90 CCW) text
-
+  const strList = [];
+  const strUpList = [];
   let px = 0, py = 0, vx = 0, vy = 0;
 
-  const lines = text.split(/\r\n|\r|\n/);
-  for (const raw of lines) {
+  for (const raw of text.split(/\r\n|\r|\n/)) {
     if (/^\//.test(raw)) continue;
     if (/^#/.test(raw)) continue;
     const line = raw.split("#")[0];
@@ -93,14 +80,10 @@ function render(text) {
       let l = px, r = px, t = py, b = py;
       vx = 0; vy = 0;
       switch (dir) {
-        case "l":
-          b += (len - 1) * GRID; r += lw * GRID; l -= rw * GRID; vy = GRID; break;
-        case "t": case "u":
-          l -= (len - 1) * GRID; b += lw * GRID; t -= rw * GRID; vx = -GRID; break;
-        case "r":
-          t -= (len - 1) * GRID; l -= lw * GRID; r += rw * GRID; vy = -GRID; break;
-        case "b": case "d":
-          r += (len - 1) * GRID; t -= lw * GRID; b += rw * GRID; vx = GRID; break;
+        case "l": b += (len - 1) * GRID; r += lw * GRID; l -= rw * GRID; vy = GRID; break;
+        case "t": case "u": l -= (len - 1) * GRID; b += lw * GRID; t -= rw * GRID; vx = -GRID; break;
+        case "r": t -= (len - 1) * GRID; l -= lw * GRID; r += rw * GRID; vy = -GRID; break;
+        case "b": case "d": r += (len - 1) * GRID; t -= lw * GRID; b += rw * GRID; vx = GRID; break;
       }
       l -= 15; t -= 15; r += 15; b += 15;
       out.push(`<rect x="${l}" y="${t}" width="${r - l}" height="${b - t}" fill="none" stroke="#f00" stroke-width="2"/>`);
@@ -113,7 +96,6 @@ function render(text) {
       continue;
     }
 
-    // pinname + trace: split on the first run of whitespace
     const mm = line.match(/^([^ \t]*)(?:[ \t]+(.*))?$/);
     if (!mm) continue;
     const pinname = mm[1];
@@ -210,11 +192,9 @@ function render(text) {
       }
     }
 
-    px += vx;
-    py += vy;
+    px += vx; py += vy;
   }
 
-  // text (drawn last so it stays on top)
   for (const s of strList) {
     out.push(`<text x="${s.x}" y="${s.y + FH - 2}" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" fill="#000">${escXml(s.text)}</text>`);
   }
@@ -226,11 +206,179 @@ function render(text) {
   return out.join("");
 }
 
-const src = document.getElementById("src");
-const preview = document.getElementById("preview");
-function update() { preview.innerHTML = render(src.value); }
-src.addEventListener("input", update);
-update();
+/* ---------- Storage ---------- */
+
+const STORAGE_KEY = "pcbgrid20-preview.files.v1";
+
+const DEFAULT_CONTENT = `** 10,2qr
+
+** 4,13t10,0,0
+B8
+A0
+A1
+B0
+B1
+B2
+15
+13
+SC
+B9
+
+** 3,13t10,0,0
+DA
+G
+G
+5V
+5V
+3V3
+A0
+A1
+SD
+BT
+`;
+
+function loadAll() {
+  try {
+    const j = localStorage.getItem(STORAGE_KEY);
+    if (!j) return {};
+    return JSON.parse(j) || {};
+  } catch (e) { return {}; }
+}
+function saveAll(all) { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }
+
+function loadFile(id) { return loadAll()[id] || null; }
+function saveFile(id, patch) {
+  const all = loadAll();
+  const cur = all[id] || { id, title: "", content: "", createdAt: Date.now() };
+  all[id] = Object.assign(cur, patch, { updatedAt: Date.now() });
+  saveAll(all);
+  return all[id];
+}
+function deleteFile(id) {
+  const all = loadAll();
+  delete all[id];
+  saveAll(all);
+}
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+function createFile() {
+  const id = newId();
+  const all = loadAll();
+  const n = Object.keys(all).length + 1;
+  const f = { id, title: `pcbgrid ${n}`, content: DEFAULT_CONTENT, createdAt: Date.now(), updatedAt: Date.now() };
+  all[id] = f;
+  saveAll(all);
+  return f;
+}
+
+/* ---------- Routing ---------- */
+
+function currentRoute() {
+  const h = location.hash.replace(/^#/, "");
+  if (h.startsWith("f/")) return { name: "file", id: h.slice(2) };
+  return { name: "index" };
+}
+function go(hash) { location.hash = hash; }
+
+window.addEventListener("hashchange", route);
+document.addEventListener("DOMContentLoaded", route);
+
+function route() {
+  const r = currentRoute();
+  if (r.name === "file") {
+    const f = loadFile(r.id);
+    if (!f) { go(""); return; }
+    renderEditor(f);
+  } else {
+    renderIndex();
+  }
+}
+
+/* ---------- Views ---------- */
+
+function fmtDate(t) {
+  if (!t) return "";
+  const d = new Date(t);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderIndex() {
+  const all = loadAll();
+  const files = Object.values(all).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div id="index">
+      <h1>pcbgrid20 preview</h1>
+      <p><button class="new" id="new-btn">+ 新しい pcbgrid</button></p>
+      ${files.length === 0
+        ? `<p class="empty">まだファイルがありません。上のボタンで作成してください。</p>`
+        : `<ul>${files.map(f => `
+            <li>
+              <a data-id="${f.id}">${escXml(f.title || "(無題)")}</a>
+              <span class="meta">${fmtDate(f.updatedAt)}</span>
+              <button data-del="${f.id}">削除</button>
+            </li>`).join("")}</ul>`}
+    </div>`;
+  document.getElementById("new-btn").addEventListener("click", () => {
+    const f = createFile();
+    go(`f/${f.id}`);
+  });
+  app.querySelectorAll("a[data-id]").forEach(a => {
+    a.addEventListener("click", () => go(`f/${a.dataset.id}`));
+  });
+  app.querySelectorAll("button[data-del]").forEach(b => {
+    b.addEventListener("click", () => {
+      if (confirm("このファイルを削除しますか?")) {
+        deleteFile(b.dataset.del);
+        renderIndex();
+      }
+    });
+  });
+}
+
+function renderEditor(f) {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <header>
+      <a id="back-link">← 一覧</a>
+      <input class="title" id="title" value="${escXml(f.title)}">
+      <span class="spacer"></span>
+      <span id="status" style="color:#888;font-size:12px">保存済み</span>
+    </header>
+    <main>
+      <div class="pane-label">preview</div>
+      <div id="preview"></div>
+      <div class="pane-label">input</div>
+      <textarea id="src" spellcheck="false"></textarea>
+    </main>`;
+
+  const titleEl = document.getElementById("title");
+  const srcEl = document.getElementById("src");
+  const previewEl = document.getElementById("preview");
+  const statusEl = document.getElementById("status");
+  srcEl.value = f.content;
+
+  function update() { previewEl.innerHTML = render(srcEl.value); }
+  function markSaved() { statusEl.textContent = "保存済み"; }
+  function markDirty() { statusEl.textContent = "保存中…"; }
+
+  update();
+
+  srcEl.addEventListener("input", () => {
+    markDirty();
+    saveFile(f.id, { content: srcEl.value });
+    update();
+    markSaved();
+  });
+  titleEl.addEventListener("input", () => {
+    markDirty();
+    saveFile(f.id, { title: titleEl.value });
+    markSaved();
+  });
+  document.getElementById("back-link").addEventListener("click", () => go(""));
+}
 </script>
 </body>
 </html>
