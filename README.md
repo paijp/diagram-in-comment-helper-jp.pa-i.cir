@@ -34,6 +34,13 @@ $ php diacom.php <cir.php >cir.html
 - Draw the layout of parts for a small universal PCB.
 - https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/pcbgrid20.html from this code: https://github.com/paijp/diagram-in-comment-helper-jp.pa-i.cir/blob/main/pcbgrid20.php
 
+## pcbgrid20-preview.html
+
+- Standalone JavaScript / SVG live preview for the pcbgrid20 syntax. Runs entirely in the browser (no PHP required); just download and open the file.
+- Provides a file list on the top page and a "新しい pcbgrid" button to add a new file. Each file is saved to `localStorage`, with the preview shown above the textarea and updated in real time as you type.
+- QR code output and the QL-820 raster mode from `pcbgrid20.php` are out of scope.
+- https://paijp.github.io/diagram-in-comment-helper-jp.pa-i.cir/pcbgrid20-preview.html
+
 ## other samples.
 
 - https://paijp.github.io/smallest-touchpanel-ui/pic32mx/lcdtp.html from this code: https://github.com/paijp/smallest-touchpanel-ui/blob/main/pic32mx/lcdtp.c
