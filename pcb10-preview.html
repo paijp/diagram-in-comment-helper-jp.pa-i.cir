@@ -15,8 +15,12 @@
   header button { font-size: 13px; padding: 3px 10px; }
 
   main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  #preview { flex: 1 1 0; overflow: auto; background: #063; border-bottom: 1px solid #ccc; min-height: 0; text-align: center; }
-  #preview svg { display: inline-block; }
+  #preview { flex: 1 1 0; overflow: auto; background: #333; border-bottom: 1px solid #ccc; min-height: 0; text-align: center; padding: 10px; box-sizing: border-box; }
+  #preview canvas { display: inline-block; image-rendering: pixelated; }
+  #modes { display: inline-flex; gap: 4px; }
+  #modes button { font-size: 12px; padding: 2px 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  #modes button.active { background: #444; color: #fff; border-color: #444; }
+  .pane-label .spacer { flex: 1; }
   #src { flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
   .pane-label { padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; color: #555; display: flex; gap: 12px; }
   .pane-label .err { color: #c00; }
@@ -45,7 +49,8 @@
  * =================================================================== */
 
 const WIDTHS = { "2": 0.2, "3": 0.3, "6": 0.6 };
-const GRID_STEPS = [10, 5, 2.5, 1.25, 0.625, 0.5];
+const GRID_STEPS = [2.5, 2, 1.25, 1, 0.625, 0.5];
+const INITIAL_GRID = 1;
 const DIRS = {
   "1": [-1, -1], "2": [ 0, -1], "3": [ 1, -1],
   "4": [-1,  0],                "6": [ 1,  0],
@@ -66,7 +71,7 @@ const LAYER_ORDER = ["R","r","B","P","p","S","s","T"];
 
 function makeCtx() {
   return {
-    x: 0, y: 0, layer: "p", width: 0.3, grid: 2.5,
+    x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
     stack: [],
     vars: {},               // shared (global)
     pinScopes: [],          // shared, but push/pop are localized
@@ -192,9 +197,9 @@ function parseMove(source, i) {
 function applyMove(ctx, xp, yp, moveOnly) {
   const x0 = ctx.x, y0 = ctx.y;
   let nx, ny;
-  if (xp.kind === "rel") nx = x0 + xp.val;
+  if (xp.kind === "rel") nx = x0 + xp.val * ctx.grid;
   else { const v = ctx.vars[xp.val] || { x:0, y:0 }; nx = v.x; }
-  if (yp.kind === "rel") ny = y0 + yp.val;
+  if (yp.kind === "rel") ny = y0 + yp.val * ctx.grid;
   else { const v = ctx.vars[yp.val] || { x:0, y:0 }; ny = v.y; }
   if (!moveOnly) drawLine(ctx, x0, y0, nx, ny);
   ctx.x = nx; ctx.y = ny;
@@ -316,7 +321,7 @@ function runSource(ctx, source) {
         // dry-pass to record pins
         const sub = {
           ...ctx,
-          x: 0, y: 0, layer: "p", width: 0.3, grid: 2.5,
+          x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
           stack: [], pinScopes: [], currentDef: def,
           emit: false, transform: null,
         };
@@ -353,7 +358,7 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
   // Render component body (in its own coordinate frame, drawing enabled iff caller is emitting).
   const sub = {
     ...ctx,
-    x: 0, y: 0, layer: "p", width: 0.3, grid: 2.5,
+    x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
     stack: [], pinScopes: [], currentDef: null,
     emit: ctx.emit, transform,
   };
@@ -369,60 +374,112 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
   ctx.pinScopes.pop();
 }
 
-/* ---------- SVG rendering ---------- */
+/* ---------- Canvas rasterization ---------- */
 
-function renderSVG(ctx) {
-  let { minX, minY, maxX, maxY } = ctx.bbox;
+function computeExtent(bbox) {
+  let { minX, minY, maxX, maxY } = bbox;
   if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
   const margin = 2;
   minX -= margin; minY -= margin; maxX += margin; maxY += margin;
   let w = maxX - minX, h = maxY - minY;
   if (w < 20) { const d = (20 - w) / 2; minX -= d; maxX += d; w = 20; }
   if (h < 20) { const d = (20 - h) / 2; minY -= d; maxY += d; h = 20; }
-
-  const pxPerMm = 12;
-  const out = [];
-  out.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${-maxY} ${w} ${h}" width="${w * pxPerMm}" height="${h * pxPerMm}">`);
-  // background
-  out.push(`<rect x="${minX}" y="${-maxY}" width="${w}" height="${h}" fill="#063"/>`);
-  // grid dots at 2.5mm
-  const dots = [];
-  const step = 2.5;
-  const gx0 = Math.ceil(minX / step) * step;
-  const gy0 = Math.ceil(minY / step) * step;
-  for (let x = gx0; x <= maxX; x += step)
-    for (let y = gy0; y <= maxY; y += step)
-      dots.push(`M${x.toFixed(3)},${(-y).toFixed(3)}h0.05v0.05h-0.05z`);
-  if (dots.length) out.push(`<path fill="#0a5" d="${dots.join("")}"/>`);
-
-  out.push(`<g transform="scale(1,-1)">`);
-  const byLayer = {};
-  for (const p of ctx.primitives) {
-    (byLayer[p.layer] = byLayer[p.layer] || []).push(p);
-  }
-  for (const layer of LAYER_ORDER) {
-    const arr = byLayer[layer];
-    if (!arr) continue;
-    const color = LAYER_COLORS[layer];
-    for (const p of arr) {
-      if (p.type === "line") {
-        out.push(`<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" stroke="${color}" stroke-width="${p.width}" stroke-linecap="round"/>`);
-      } else if (p.type === "circle") {
-        out.push(`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="${color}"/>`);
-      } else if (p.type === "rect") {
-        out.push(`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${color}"/>`);
-      }
-    }
-  }
-  out.push(`</g></svg>`);
-  return out.join("");
+  return { minX, minY, maxX, maxY, w, h };
 }
 
-function render(source) {
+function rasterizeMask(primitives, layerSet, ext, pxPerMm, flipX) {
+  const W = Math.max(1, Math.round(ext.w * pxPerMm));
+  const H = Math.max(1, Math.round(ext.h * pxPerMm));
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, W, H);
+  g.save();
+  if (flipX) { g.translate(W, 0); g.scale(-1, 1); }
+  g.translate(-ext.minX * pxPerMm, ext.maxY * pxPerMm);
+  g.scale(pxPerMm, -pxPerMm);
+  g.strokeStyle = "#fff"; g.fillStyle = "#fff";
+  for (const p of primitives) {
+    if (!layerSet.has(p.layer)) continue;
+    if (p.type === "line") {
+      g.lineWidth = p.width; g.lineCap = "round";
+      g.beginPath(); g.moveTo(p.x1, p.y1); g.lineTo(p.x2, p.y2); g.stroke();
+    } else if (p.type === "circle") {
+      g.beginPath(); g.arc(p.cx, p.cy, p.r, 0, Math.PI * 2); g.fill();
+    } else if (p.type === "rect") {
+      g.fillRect(p.x, p.y, p.w, p.h);
+    }
+  }
+  g.restore();
+  return { data: g.getImageData(0, 0, W, H).data, W, H };
+}
+
+function renderCanvas(ctx, mode) {
+  const ext = computeExtent(ctx.bbox);
+  const pxPerMm = 16;
+  const flipX = (mode === "bottom");
+
+  let dP, dR, dS, dBT, dp, ds;
+  const prims = ctx.primitives;
+  if (mode === "top") {
+    dP  = rasterizeMask(prims, new Set(["P"]),     ext, pxPerMm, flipX);
+    dR  = rasterizeMask(prims, new Set(["R"]),     ext, pxPerMm, flipX);
+    dS  = rasterizeMask(prims, new Set(["S"]),     ext, pxPerMm, flipX);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, flipX);
+  } else if (mode === "bottom") {
+    dP  = rasterizeMask(prims, new Set(["p"]),     ext, pxPerMm, flipX);
+    dR  = rasterizeMask(prims, new Set(["r"]),     ext, pxPerMm, flipX);
+    dS  = rasterizeMask(prims, new Set(["s"]),     ext, pxPerMm, flipX);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, flipX);
+  } else {
+    dP  = rasterizeMask(prims, new Set(["P"]),     ext, pxPerMm, false);
+    dp  = rasterizeMask(prims, new Set(["p"]),     ext, pxPerMm, false);
+    ds  = rasterizeMask(prims, new Set(["S","s"]), ext, pxPerMm, false);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, false);
+  }
+
+  const W = dBT.W, H = dBT.H;
+  const out = document.createElement("canvas");
+  out.width = W; out.height = H;
+  const octx = out.getContext("2d");
+  const img = octx.createImageData(W, H);
+  const od = img.data;
+  const total = W * H;
+
+  if (mode === "pattern") {
+    const aP = dP.data, ap = dp.data, aS = ds.data, aBT = dBT.data;
+    for (let i = 0; i < total; i++) {
+      const k = i * 4;
+      let r = 0xff, g = 0xff, b = 0xff;
+      if (aS[k]  > 128) b = 0;             // silk → AND #ff0 (yellow)
+      if (aP[k]  > 128) g = 0;             // P    → AND #f0f (magenta)
+      if (ap[k]  > 128) r = 0;             // p    → AND #0ff (cyan)
+      if (aBT[k] > 128) { r = 0; g = 0; b = 0; }
+      od[k] = r; od[k+1] = g; od[k+2] = b; od[k+3] = 0xff;
+    }
+  } else {
+    const aP = dP.data, aR = dR.data, aS = dS.data, aBT = dBT.data;
+    for (let i = 0; i < total; i++) {
+      const k = i * 4;
+      let r = 0xff, g = 0xff, b = 0xff;
+      const hasS = aS[k] > 128, hasR = aR[k] > 128, hasP = aP[k] > 128, hasBT = aBT[k] > 128;
+      if (hasS)       g = 0;               // AND #f0f
+      else if (!hasR) b = 0;               // AND #ff0
+      if (hasP)       r = 0;               // AND #0ff
+      if (hasBT)      { r = 0; g = 0; b = 0; }
+      od[k] = r; od[k+1] = g; od[k+2] = b; od[k+3] = 0xff;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
+
+function interpret(source) {
   const ctx = makeCtx();
   try { runSource(ctx, source); }
   catch (e) { ctx.errors.push(String(e && e.message || e)); }
-  return { svg: renderSVG(ctx), errors: ctx.errors, bbox: ctx.bbox };
+  return ctx;
 }
 
 /* ---------- Storage (mirrors pcbgrid20-preview.html) ---------- */
@@ -559,7 +616,16 @@ function renderEditor(f) {
       <span id="status" style="color:#888;font-size:12px">保存済み</span>
     </header>
     <main>
-      <div class="pane-label"><span>preview</span><span id="info"></span><span class="err" id="errors"></span></div>
+      <div class="pane-label">
+        <span>preview</span>
+        <span id="info"></span>
+        <span id="modes">
+          <button data-mode="top">部品面</button>
+          <button data-mode="bottom">半田面</button>
+          <button data-mode="pattern">パターン</button>
+        </span>
+        <span class="err" id="errors"></span>
+      </div>
       <div id="preview"></div>
       <div class="pane-label">input</div>
       <textarea id="src" spellcheck="false"></textarea>
@@ -572,17 +638,32 @@ function renderEditor(f) {
   const errEl = document.getElementById("errors");
   srcEl.value = f.content;
 
+  let mode = renderEditor._mode || "top";
+
   function update() {
-    const r = render(srcEl.value);
-    previewEl.innerHTML = r.svg;
-    if (isFinite(r.bbox.minX)) {
-      const w = (r.bbox.maxX - r.bbox.minX).toFixed(2);
-      const h = (r.bbox.maxY - r.bbox.minY).toFixed(2);
+    const ctx = interpret(srcEl.value);
+    const canvas = renderCanvas(ctx, mode);
+    previewEl.innerHTML = "";
+    previewEl.appendChild(canvas);
+    if (isFinite(ctx.bbox.minX)) {
+      const w = (ctx.bbox.maxX - ctx.bbox.minX).toFixed(2);
+      const h = (ctx.bbox.maxY - ctx.bbox.minY).toFixed(2);
       infoEl.textContent = `content: ${w} × ${h} mm`;
     } else infoEl.textContent = "";
-    errEl.textContent = r.errors.length ? r.errors.join(" / ") : "";
+    errEl.textContent = ctx.errors.length ? ctx.errors.join(" / ") : "";
+    document.querySelectorAll("#modes button").forEach(b => {
+      b.classList.toggle("active", b.dataset.mode === mode);
+    });
   }
   update();
+
+  document.querySelectorAll("#modes button").forEach(b => {
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      renderEditor._mode = mode;
+      update();
+    });
+  });
 
   srcEl.addEventListener("input", () => {
     statusEl.textContent = "保存中…";
