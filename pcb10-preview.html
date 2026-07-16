@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pcb10 preview</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #app { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 6px 12px; background: #eee; border-bottom: 1px solid #ccc; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+  header a { color: #06c; cursor: pointer; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  header .spacer { flex: 1; }
+  header input.title { font-size: 13px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 3px; width: 260px; }
+  header button { font-size: 13px; padding: 3px 10px; }
+
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #preview { flex: 1 1 0; overflow: auto; background: #333; border-bottom: 1px solid #ccc; min-height: 0; text-align: center; padding: 10px; box-sizing: border-box; }
+  #preview canvas { display: inline-block; image-rendering: pixelated; }
+  #modes { display: inline-flex; gap: 4px; }
+  #modes button { font-size: 12px; padding: 2px 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  #modes button.active { background: #444; color: #fff; border-color: #444; }
+  .pane-label .spacer { flex: 1; }
+  #src { flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
+  .pane-label { padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; color: #555; display: flex; gap: 12px; }
+  .pane-label .err { color: #c00; }
+
+  #index { padding: 20px 24px; overflow: auto; }
+  #index h1 { font-size: 18px; margin: 0 0 12px 0; }
+  #index ul { list-style: none; padding: 0; margin: 0 0 16px 0; }
+  #index li { padding: 6px 8px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
+  #index li a { color: #06c; text-decoration: none; flex: 1; cursor: pointer; }
+  #index li a:hover { text-decoration: underline; }
+  #index li .meta { color: #888; font-size: 12px; }
+  #index li button { font-size: 12px; }
+  #index .empty { color: #888; font-style: italic; }
+  #index button.new { font-size: 14px; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+ * pcb10 preview — 2-layer PCB artwork draft in the browser.
+ * Coordinate system: mm, x right, y up.
+ * =================================================================== */
+
+const WIDTHS = { "2": 0.2, "3": 0.3, "6": 0.6 };
+const GRID_STEPS = [2.5, 2, 1.25, 1, 0.625, 0.5];
+const INITIAL_GRID = 1;
+const DIRS = {
+  "1": [-1, -1], "2": [ 0, -1], "3": [ 1, -1],
+  "4": [-1,  0],                "6": [ 1,  0],
+  "7": [-1,  1], "8": [ 0,  1], "9": [ 1,  1],
+};
+const LAYERS = new Set(["P","p","Q","q","R","r","S","s","B","T"]);
+const MIRROR_LAYER = { P:"p", p:"P", Q:"q", q:"Q", R:"r", r:"R", S:"s", s:"S", B:"B", T:"T" };
+
+const LAYER_COLORS = {
+  P: "#e33", p: "#39f",
+  R: "rgba(255,200,80,0.55)", r: "rgba(100,220,255,0.55)",
+  S: "#fff",  s: "#bbb",
+  B: "#0f0",  T: "#000",
+};
+const LAYER_ORDER = ["R","r","B","P","p","S","s","T"];
+
+/* ---------- interpreter ---------- */
+
+function makeCtx() {
+  return {
+    x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
+    stack: [],
+    vars: {},               // shared (global)
+    pinScopes: [],          // shared, but push/pop are localized
+    currentDef: null,       // set during definition dry-pass
+    components: {},         // shared
+    labeledCalls: {},       // shared
+    primitives: [],         // shared
+    bbox: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+    emit: true,
+    transform: null,        // {flip, angle, offsetX, offsetY} — set when rendering a component body
+    errors: [],
+  };
+}
+
+function applyRotFlip(t, x, y) {
+  let px = x, py = y;
+  if (t.flip) px = -px;
+  const a = ((t.angle % 360) + 360) % 360;
+  const dir = t.flip ? -1 : 1;  // >: CW, <: CCW
+  const eff = ((a * dir) % 360 + 360) % 360;
+  switch (eff) {
+    case 0:   return { x: px,  y: py  };
+    case 90:  return { x: py,  y: -px };
+    case 180: return { x: -px, y: -py };
+    case 270: return { x: -py, y: px  };
+  }
+  return { x: px, y: py };
+}
+
+function transformPt(ctx, x, y) {
+  if (!ctx.transform) return { x, y };
+  const r = applyRotFlip(ctx.transform, x, y);
+  return { x: r.x + ctx.transform.offsetX, y: r.y + ctx.transform.offsetY };
+}
+function transformLayer(ctx, layer) {
+  return (ctx.transform && ctx.transform.flip) ? MIRROR_LAYER[layer] : layer;
+}
+function updateBBox(ctx, x, y) {
+  const b = ctx.bbox;
+  if (x < b.minX) b.minX = x;
+  if (y < b.minY) b.minY = y;
+  if (x > b.maxX) b.maxX = x;
+  if (y > b.maxY) b.maxY = y;
+}
+function emitPrim(ctx, prim) {
+  if (prim.layer === "Q") {
+    ctx.primitives.push({ ...prim, layer: "P" });
+    ctx.primitives.push({ ...prim, layer: "R" });
+  } else if (prim.layer === "q") {
+    ctx.primitives.push({ ...prim, layer: "p" });
+    ctx.primitives.push({ ...prim, layer: "r" });
+  } else {
+    ctx.primitives.push(prim);
+  }
+}
+function drawLine(ctx, x1, y1, x2, y2) {
+  if (!ctx.emit) return;
+  const p1 = transformPt(ctx, x1, y1);
+  const p2 = transformPt(ctx, x2, y2);
+  const layer = transformLayer(ctx, ctx.layer);
+  emitPrim(ctx, { type:"line", x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y, width:ctx.width, layer });
+  const r = ctx.width / 2;
+  updateBBox(ctx, Math.min(p1.x,p2.x)-r, Math.min(p1.y,p2.y)-r);
+  updateBBox(ctx, Math.max(p1.x,p2.x)+r, Math.max(p1.y,p2.y)+r);
+}
+function drawCircle(ctx, cx, cy, r, layerLetter) {
+  if (!ctx.emit) return;
+  const p = transformPt(ctx, cx, cy);
+  const layer = transformLayer(ctx, layerLetter);
+  emitPrim(ctx, { type:"circle", cx:p.x, cy:p.y, r, layer });
+  updateBBox(ctx, p.x - r, p.y - r);
+  updateBBox(ctx, p.x + r, p.y + r);
+}
+function drawRect(ctx, x1, y1, x2, y2, layerLetter) {
+  if (!ctx.emit) return;
+  const p1 = transformPt(ctx, x1, y1);
+  const p2 = transformPt(ctx, x2, y2);
+  const layer = transformLayer(ctx, layerLetter);
+  const x = Math.min(p1.x, p2.x), y = Math.min(p1.y, p2.y);
+  const w = Math.abs(p2.x - p1.x), h = Math.abs(p2.y - p1.y);
+  emitPrim(ctx, { type:"rect", x, y, w, h, layer });
+  updateBBox(ctx, x, y);
+  updateBBox(ctx, x + w, y + h);
+}
+
+function findMatchingBrace(s, start) {
+  // s[start] === '{' — return index of matching '}'
+  let depth = 1;
+  let i = start + 1;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "#") { while (i < s.length && s[i] !== "\n") i++; continue; }
+    if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) return i; }
+    i++;
+  }
+  return s.length;  // unmatched — treat EOF as close
+}
+
+function parseMove(source, i) {
+  // x-part
+  let m = /^([-+])([.0-9]+)/.exec(source.slice(i));
+  let xKind, xVal, len;
+  if (m) { len = m[0].length; xKind = "rel"; xVal = (m[1] === "-" ? -1 : 1) * parseFloat(m[2]); }
+  else {
+    m = /^-([A-Za-z])/.exec(source.slice(i));
+    if (!m) return null;
+    len = m[0].length; xKind = "var"; xVal = m[1];
+  }
+  const rest = source.slice(i + len);
+  // y-part
+  m = /^([-+])([.0-9]+)/.exec(rest);
+  let yKind, yVal, ylen;
+  if (m) { ylen = m[0].length; yKind = "rel"; yVal = (m[1] === "-" ? -1 : 1) * parseFloat(m[2]); }
+  else {
+    m = /^([A-Za-z])/.exec(rest);
+    if (!m) return null;
+    ylen = m[0].length; yKind = "var"; yVal = m[1];
+  }
+  return { x:{kind:xKind, val:xVal}, y:{kind:yKind, val:yVal}, end: i + len + ylen };
+}
+
+function applyMove(ctx, xp, yp, moveOnly) {
+  const x0 = ctx.x, y0 = ctx.y;
+  let nx, ny;
+  if (xp.kind === "rel") nx = x0 + xp.val * ctx.grid;
+  else { const v = ctx.vars[xp.val] || { x:0, y:0 }; nx = v.x; }
+  if (yp.kind === "rel") ny = y0 + yp.val * ctx.grid;
+  else { const v = ctx.vars[yp.val] || { x:0, y:0 }; ny = v.y; }
+  if (!moveOnly) drawLine(ctx, x0, y0, nx, ny);
+  ctx.x = nx; ctx.y = ny;
+}
+
+function resolvePinAt(ctx, scope, name) {
+  const local = scope.pins[name];
+  if (!local) return null;
+  const t = scope.transform;
+  const r = applyRotFlip(t, local.x, local.y);
+  return { x: r.x + t.offsetX, y: r.y + t.offsetY };
+}
+
+function runSource(ctx, source) {
+  let i = 0;
+  const n = source.length;
+  while (i < n) {
+    const c = source[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "#") { while (i < n && source[i] !== "\n") i++; continue; }
+    if (c === "}") { i++; continue; }  // stray close — ignore
+    if (c === "(") {
+      ctx.stack.push({ x:ctx.x, y:ctx.y, layer:ctx.layer, width:ctx.width, grid:ctx.grid });
+      i++; continue;
+    }
+    if (c === ")") {
+      if (ctx.stack.length) {
+        const s = ctx.stack.pop();
+        ctx.x=s.x; ctx.y=s.y; ctx.layer=s.layer; ctx.width=s.width; ctx.grid=s.grid;
+      }
+      i++; continue;
+    }
+    if (c === "/") {
+      const idx = GRID_STEPS.indexOf(ctx.grid);
+      if (idx >= 0 && idx < GRID_STEPS.length - 1) ctx.grid = GRID_STEPS[idx + 1];
+      i++; continue;
+    }
+    if (c === "*") {
+      const idx = GRID_STEPS.indexOf(ctx.grid);
+      if (idx > 0) ctx.grid = GRID_STEPS[idx - 1];
+      i++; continue;
+    }
+    if (c === "+" && i + 1 < n && /[A-Za-z]/.test(source[i+1])) {
+      ctx.vars[source[i+1]] = { x: ctx.x, y: ctx.y };
+      i += 2; continue;
+    }
+    if (c === "+" || c === "-") {
+      const mv = parseMove(source, i);
+      if (mv) { applyMove(ctx, mv.x, mv.y, false); i = mv.end; continue; }
+      i++; continue;
+    }
+    if (c === "!") {
+      const mv = parseMove(source, i + 1);
+      if (mv) { applyMove(ctx, mv.x, mv.y, true); i = mv.end; continue; }
+      i++; continue;
+    }
+    if (/[12346789]/.test(c)) {
+      const [dx, dy] = DIRS[c];
+      const nx = ctx.x + dx * ctx.grid;
+      const ny = ctx.y + dy * ctx.grid;
+      drawLine(ctx, ctx.x, ctx.y, nx, ny);
+      ctx.x = nx; ctx.y = ny;
+      i++; continue;
+    }
+    if (c === "@") {
+      const m = /^@([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?/.exec(source.slice(i));
+      if (!m) { i++; continue; }
+      const [full, first, second] = m;
+      if (second) {
+        const call = ctx.labeledCalls[first];
+        if (call) {
+          const w = resolvePinAt(ctx, call, second);
+          if (w) { ctx.x = w.x; ctx.y = w.y; }
+        }
+      } else if (ctx.pinScopes.length) {
+        const scope = ctx.pinScopes[ctx.pinScopes.length - 1];
+        const w = resolvePinAt(ctx, scope, first);
+        if (w) { ctx.x = w.x; ctx.y = w.y; }
+      } else if (ctx.currentDef) {
+        ctx.currentDef.pins[first] = { x: ctx.x, y: ctx.y };
+      }
+      i += full.length; continue;
+    }
+    if (LAYERS.has(c)) {
+      const rest = source.slice(i);
+      let mm;
+      if (mm = /^([PpQqRrSsBT])@([.0-9]+)/.exec(rest)) {
+        const layer = mm[1], dia = parseFloat(mm[2]);
+        ctx.layer = layer; ctx.width = dia;
+        drawCircle(ctx, ctx.x, ctx.y, dia / 2, layer);
+        i += mm[0].length; continue;
+      }
+      if (mm = /^([PpQqRrSsBT])((?:[-+][.0-9]+){4})/.exec(rest)) {
+        const layer = mm[1];
+        const nums = mm[2].match(/[-+][.0-9]+/g).map(parseFloat);
+        ctx.layer = layer;
+        drawRect(ctx, ctx.x + nums[0], ctx.y + nums[1], ctx.x + nums[2], ctx.y + nums[3], layer);
+        i += mm[0].length; continue;
+      }
+      if (mm = /^([PpQqRrSsBT])([236])/.exec(rest)) {
+        ctx.layer = mm[1]; ctx.width = WIDTHS[mm[2]];
+        i += mm[0].length; continue;
+      }
+      i++; continue;
+    }
+    if (c === ">" || c === "<") {
+      let j = i;
+      while (j < n && source[j] === c) j++;
+      const count = j - i;
+      // definition: > + '='
+      if (c === ">" && j < n && source[j] === "=") {
+        const nm = /^([A-Za-z_][A-Za-z0-9_]*)\{/.exec(source.slice(j + 1));
+        if (!nm) { i = j + 1; continue; }
+        const compName = nm[1];
+        const braceStart = j + 1 + nm[0].length - 1;
+        const braceEnd = findMatchingBrace(source, braceStart);
+        const body = source.slice(braceStart + 1, braceEnd);
+        const def = { name: compName, body, defaultPin: { x: 0, y: 0 }, pins: {} };
+        // dry-pass to record pins
+        const sub = {
+          ...ctx,
+          x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
+          stack: [], pinScopes: [], currentDef: def,
+          emit: false, transform: null,
+        };
+        runSource(sub, body);
+        ctx.components[compName] = def;
+        i = braceEnd + 1; continue;
+      }
+      // call: (label=)? name (@pin)? {
+      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z_][A-Za-z0-9_]*))?\{/.exec(source.slice(j));
+      if (!cm) { i++; continue; }
+      const [full, label, compName, pinName] = cm;
+      const braceStart = j + cm[0].length - 1;
+      const braceEnd = findMatchingBrace(source, braceStart);
+      const callBody = source.slice(braceStart + 1, braceEnd);
+      executeCall(ctx, c, count, label, compName, pinName, callBody);
+      i = braceEnd + 1; continue;
+    }
+    i++;
+  }
+}
+
+function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
+  const def = ctx.components[compName];
+  if (!def) { ctx.errors.push(`unknown component: ${compName}`); return; }
+  const flip = (kind === "<");
+  const angle = ((count - 1) * 90) % 360;
+  const anchorLocal = (pinName && def.pins[pinName]) ? def.pins[pinName] : def.defaultPin;
+  const t0 = { flip, angle, offsetX: 0, offsetY: 0 };
+  const ar = applyRotFlip(t0, anchorLocal.x, anchorLocal.y);
+  const offsetX = ctx.x - ar.x;
+  const offsetY = ctx.y - ar.y;
+  const transform = { flip, angle, offsetX, offsetY };
+
+  // Render component body (in its own coordinate frame, drawing enabled iff caller is emitting).
+  const sub = {
+    ...ctx,
+    x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
+    stack: [], pinScopes: [], currentDef: null,
+    emit: ctx.emit, transform,
+  };
+  runSource(sub, def.body);
+
+  if (label) {
+    ctx.labeledCalls[label] = { compName, transform, pins: def.pins };
+  }
+
+  // Execute the call block with called component's pin scope active.
+  ctx.pinScopes.push({ pins: def.pins, transform });
+  runSource(ctx, callBody);
+  ctx.pinScopes.pop();
+}
+
+/* ---------- Canvas rasterization ---------- */
+
+function computeExtent(bbox) {
+  let { minX, minY, maxX, maxY } = bbox;
+  if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
+  const margin = 2;
+  minX -= margin; minY -= margin; maxX += margin; maxY += margin;
+  let w = maxX - minX, h = maxY - minY;
+  if (w < 20) { const d = (20 - w) / 2; minX -= d; maxX += d; w = 20; }
+  if (h < 20) { const d = (20 - h) / 2; minY -= d; maxY += d; h = 20; }
+  return { minX, minY, maxX, maxY, w, h };
+}
+
+function rasterizeMask(primitives, layerSet, ext, pxPerMm, flipX) {
+  const W = Math.max(1, Math.round(ext.w * pxPerMm));
+  const H = Math.max(1, Math.round(ext.h * pxPerMm));
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, W, H);
+  g.save();
+  if (flipX) { g.translate(W, 0); g.scale(-1, 1); }
+  g.translate(-ext.minX * pxPerMm, ext.maxY * pxPerMm);
+  g.scale(pxPerMm, -pxPerMm);
+  g.strokeStyle = "#fff"; g.fillStyle = "#fff";
+  for (const p of primitives) {
+    if (!layerSet.has(p.layer)) continue;
+    if (p.type === "line") {
+      g.lineWidth = p.width; g.lineCap = "round";
+      g.beginPath(); g.moveTo(p.x1, p.y1); g.lineTo(p.x2, p.y2); g.stroke();
+    } else if (p.type === "circle") {
+      g.beginPath(); g.arc(p.cx, p.cy, p.r, 0, Math.PI * 2); g.fill();
+    } else if (p.type === "rect") {
+      g.fillRect(p.x, p.y, p.w, p.h);
+    }
+  }
+  g.restore();
+  return { data: g.getImageData(0, 0, W, H).data, W, H };
+}
+
+function renderCanvas(ctx, mode) {
+  const ext = computeExtent(ctx.bbox);
+  const pxPerMm = 16;
+  const flipX = (mode === "bottom");
+
+  let dP, dR, dS, dBT, dp, ds;
+  const prims = ctx.primitives;
+  if (mode === "top") {
+    dP  = rasterizeMask(prims, new Set(["P"]),     ext, pxPerMm, flipX);
+    dR  = rasterizeMask(prims, new Set(["R"]),     ext, pxPerMm, flipX);
+    dS  = rasterizeMask(prims, new Set(["S"]),     ext, pxPerMm, flipX);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, flipX);
+  } else if (mode === "bottom") {
+    dP  = rasterizeMask(prims, new Set(["p"]),     ext, pxPerMm, flipX);
+    dR  = rasterizeMask(prims, new Set(["r"]),     ext, pxPerMm, flipX);
+    dS  = rasterizeMask(prims, new Set(["s"]),     ext, pxPerMm, flipX);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, flipX);
+  } else {
+    dP  = rasterizeMask(prims, new Set(["P"]),     ext, pxPerMm, false);
+    dp  = rasterizeMask(prims, new Set(["p"]),     ext, pxPerMm, false);
+    ds  = rasterizeMask(prims, new Set(["S","s"]), ext, pxPerMm, false);
+    dBT = rasterizeMask(prims, new Set(["B","T"]), ext, pxPerMm, false);
+  }
+
+  const W = dBT.W, H = dBT.H;
+  const out = document.createElement("canvas");
+  out.width = W; out.height = H;
+  const octx = out.getContext("2d");
+  const img = octx.createImageData(W, H);
+  const od = img.data;
+  const total = W * H;
+
+  if (mode === "pattern") {
+    const aP = dP.data, ap = dp.data, aS = ds.data, aBT = dBT.data;
+    for (let i = 0; i < total; i++) {
+      const k = i * 4;
+      let r = 0xff, g = 0xff, b = 0xff;
+      if (aS[k]  > 128) b = 0;             // silk → AND #ff0 (yellow)
+      if (aP[k]  > 128) g = 0;             // P    → AND #f0f (magenta)
+      if (ap[k]  > 128) r = 0;             // p    → AND #0ff (cyan)
+      if (aBT[k] > 128) { r = 0; g = 0; b = 0; }
+      od[k] = r; od[k+1] = g; od[k+2] = b; od[k+3] = 0xff;
+    }
+  } else {
+    const aP = dP.data, aR = dR.data, aS = dS.data, aBT = dBT.data;
+    for (let i = 0; i < total; i++) {
+      const k = i * 4;
+      let r = 0xff, g = 0xff, b = 0xff;
+      const hasS = aS[k] > 128, hasR = aR[k] > 128, hasP = aP[k] > 128, hasBT = aBT[k] > 128;
+      if (hasS)       g = 0;               // AND #f0f
+      else if (!hasR) b = 0;               // AND #ff0
+      if (hasP)       r = 0;               // AND #0ff
+      if (hasBT)      { r = 0; g = 0; b = 0; }
+      od[k] = r; od[k+1] = g; od[k+2] = b; od[k+3] = 0xff;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
+
+function interpret(source) {
+  const ctx = makeCtx();
+  try { runSource(ctx, source); }
+  catch (e) { ctx.errors.push(String(e && e.message || e)); }
+  return ctx;
+}
+
+/* ---------- Storage (mirrors pcbgrid20-preview.html) ---------- */
+
+const STORAGE_KEY = "pcb10-preview.files.v1";
+
+const DEFAULT_CONTENT = `# pcb10 sample — 2-layer PCB draft.
+# Layers: P/p top/bot pattern, Q/q pattern+resist, R/r resist,
+#         S/s silk, B outline, T hole. Digits 2/3/6 = width mm.
+
+# --- Outline (green): 30 x 20 mm rectangle, corners (0,0)-(30,20)
+B3
++30+0 +0+20 -30+0 +0-20
+
+# --- Component definitions -------------------------------------------
+# through-hole pad (0.8mm hole, 1.4mm land on both faces)
+>=th{
+  Q@1.4q@1.4T@0.8
+}
+# SMD land (2mm x 1mm, top pattern + resist opening)
+>=smd{
+  Q-1-0.5+1+0.5
+}
+
+# --- Placement --------------------------------------------------------
+# Two through-holes, 7.5mm apart, near the left edge
+!+5+5
++a >th{}
+!+7.5+0 >th{}
+
+# Row of 4 SMD pads on 2.54mm pitch, middle of the board
+!+5+8
+>smd{}
+!+2.54+0 >smd{}
+!+2.54+0 >smd{}
+!+2.54+0 >smd{}
+
+# Silk trace: from the first through-hole, go 5mm right
+S3
+!-aa
++5+0
+`;
+
+function loadAll() {
+  try {
+    const j = localStorage.getItem(STORAGE_KEY);
+    return j ? (JSON.parse(j) || {}) : {};
+  } catch (e) { return {}; }
+}
+function saveAll(all) { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); }
+function loadFile(id) { return loadAll()[id] || null; }
+function saveFile(id, patch) {
+  const all = loadAll();
+  const cur = all[id] || { id, title: "", content: "", createdAt: Date.now() };
+  all[id] = Object.assign(cur, patch, { updatedAt: Date.now() });
+  saveAll(all);
+  return all[id];
+}
+function deleteFile(id) { const all = loadAll(); delete all[id]; saveAll(all); }
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function createFile() {
+  const id = newId();
+  const all = loadAll();
+  const n = Object.keys(all).length + 1;
+  const f = { id, title: `pcb10 ${n}`, content: DEFAULT_CONTENT, createdAt: Date.now(), updatedAt: Date.now() };
+  all[id] = f; saveAll(all);
+  return f;
+}
+
+/* ---------- routing ---------- */
+
+function currentRoute() {
+  const h = location.hash.replace(/^#/, "");
+  if (h.startsWith("f/")) return { name: "file", id: h.slice(2) };
+  return { name: "index" };
+}
+function go(hash) { location.hash = hash; }
+window.addEventListener("hashchange", route);
+document.addEventListener("DOMContentLoaded", route);
+
+function route() {
+  const r = currentRoute();
+  if (r.name === "file") {
+    const f = loadFile(r.id);
+    if (!f) { go(""); return; }
+    renderEditor(f);
+  } else renderIndex();
+}
+
+function escXml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;" }[c]));
+}
+function fmtDate(t) {
+  if (!t) return "";
+  const d = new Date(t), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderIndex() {
+  const all = loadAll();
+  const files = Object.values(all).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div id="index">
+      <h1>pcb10 preview</h1>
+      <p><button class="new" id="new-btn">+ 新しい pcb10</button></p>
+      ${files.length === 0
+        ? `<p class="empty">まだファイルがありません。上のボタンで作成してください。</p>`
+        : `<ul>${files.map(f => `
+            <li>
+              <a data-id="${f.id}">${escXml(f.title || "(無題)")}</a>
+              <span class="meta">${fmtDate(f.updatedAt)}</span>
+              <button data-del="${f.id}">削除</button>
+            </li>`).join("")}</ul>`}
+    </div>`;
+  document.getElementById("new-btn").addEventListener("click", () => {
+    const f = createFile(); go(`f/${f.id}`);
+  });
+  app.querySelectorAll("a[data-id]").forEach(a =>
+    a.addEventListener("click", () => go(`f/${a.dataset.id}`)));
+  app.querySelectorAll("button[data-del]").forEach(b =>
+    b.addEventListener("click", () => {
+      if (confirm("このファイルを削除しますか?")) { deleteFile(b.dataset.del); renderIndex(); }
+    }));
+}
+
+function renderEditor(f) {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <header>
+      <a id="back-link">← 一覧</a>
+      <input class="title" id="title" value="${escXml(f.title)}">
+      <span class="spacer"></span>
+      <span id="status" style="color:#888;font-size:12px">保存済み</span>
+    </header>
+    <main>
+      <div class="pane-label">
+        <span>preview</span>
+        <span id="info"></span>
+        <span id="modes">
+          <button data-mode="top">部品面</button>
+          <button data-mode="bottom">半田面</button>
+          <button data-mode="pattern">パターン</button>
+        </span>
+        <span class="err" id="errors"></span>
+      </div>
+      <div id="preview"></div>
+      <div class="pane-label">input</div>
+      <textarea id="src" spellcheck="false"></textarea>
+    </main>`;
+  const titleEl = document.getElementById("title");
+  const srcEl = document.getElementById("src");
+  const previewEl = document.getElementById("preview");
+  const statusEl = document.getElementById("status");
+  const infoEl = document.getElementById("info");
+  const errEl = document.getElementById("errors");
+  srcEl.value = f.content;
+
+  let mode = renderEditor._mode || "top";
+
+  function update() {
+    const ctx = interpret(srcEl.value);
+    const canvas = renderCanvas(ctx, mode);
+    previewEl.innerHTML = "";
+    previewEl.appendChild(canvas);
+    if (isFinite(ctx.bbox.minX)) {
+      const w = (ctx.bbox.maxX - ctx.bbox.minX).toFixed(2);
+      const h = (ctx.bbox.maxY - ctx.bbox.minY).toFixed(2);
+      infoEl.textContent = `content: ${w} × ${h} mm`;
+    } else infoEl.textContent = "";
+    errEl.textContent = ctx.errors.length ? ctx.errors.join(" / ") : "";
+    document.querySelectorAll("#modes button").forEach(b => {
+      b.classList.toggle("active", b.dataset.mode === mode);
+    });
+  }
+  update();
+
+  document.querySelectorAll("#modes button").forEach(b => {
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      renderEditor._mode = mode;
+      update();
+    });
+  });
+
+  srcEl.addEventListener("input", () => {
+    statusEl.textContent = "保存中…";
+    saveFile(f.id, { content: srcEl.value });
+    update();
+    statusEl.textContent = "保存済み";
+  });
+  titleEl.addEventListener("input", () => {
+    statusEl.textContent = "保存中…";
+    saveFile(f.id, { title: titleEl.value });
+    statusEl.textContent = "保存済み";
+  });
+  document.getElementById("back-link").addEventListener("click", () => go(""));
+}
+</script>
+</body>
+</html>
