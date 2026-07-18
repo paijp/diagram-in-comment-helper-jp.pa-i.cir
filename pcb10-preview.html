@@ -294,22 +294,23 @@ function runSource(ctx, source) {
       i += full.length; continue;
     }
     if (LAYERS.has(c)) {
+      if (c === "o") { ctx.layer = "o"; i++; continue; }
       const rest = source.slice(i);
       let mm;
-      if (mm = /^([PpQqRrSsBTOo])@([.0-9]+)/.exec(rest)) {
+      if (mm = /^([PpQqRrSsBTO])@([.0-9]+)/.exec(rest)) {
         const layer = mm[1] === "O" ? "B" : mm[1], dia = parseFloat(mm[2]);
         ctx.layer = layer; ctx.width = dia;
         drawCircle(ctx, ctx.x, ctx.y, dia / 2, layer);
         i += mm[0].length; continue;
       }
-      if (mm = /^([PpQqRrSsBTOo])((?:[-+][.0-9]+){4})/.exec(rest)) {
+      if (mm = /^([PpQqRrSsBTO])((?:[-+][.0-9]+){4})/.exec(rest)) {
         const layer = mm[1] === "O" ? "B" : mm[1];
         const nums = mm[2].match(/[-+][.0-9]+/g).map(parseFloat);
         ctx.layer = layer;
         drawRect(ctx, ctx.x + nums[0], ctx.y + nums[1], ctx.x + nums[2], ctx.y + nums[3], layer);
         i += mm[0].length; continue;
       }
-      if (mm = /^([PpQqRrSsBTOo])([236])/.exec(rest)) {
+      if (mm = /^([PpQqRrSsBTO])([236])/.exec(rest)) {
         ctx.layer = mm[1] === "O" ? "B" : mm[1]; ctx.width = WIDTHS[mm[2]];
         i += mm[0].length; continue;
       }
