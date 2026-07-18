@@ -49,7 +49,6 @@
  * =================================================================== */
 
 const WIDTHS = { "2": 0.2, "3": 0.3, "6": 0.6 };
-const GRID_STEPS = [2.5, 2, 1.25, 1, 0.625, 0.5];
 const INITIAL_GRID = 1;
 const DIRS = {
   "1": [-1, -1], "2": [ 0, -1], "3": [ 1, -1],
@@ -235,14 +234,11 @@ function runSource(ctx, source) {
       }
       i++; continue;
     }
-    if (c === "/") {
-      const idx = GRID_STEPS.indexOf(ctx.grid);
-      if (idx >= 0 && idx < GRID_STEPS.length - 1) ctx.grid = GRID_STEPS[idx + 1];
-      i++; continue;
-    }
-    if (c === "*") {
-      const idx = GRID_STEPS.indexOf(ctx.grid);
-      if (idx > 0) ctx.grid = GRID_STEPS[idx - 1];
+    if (c === "/") { ctx.grid /= 2; i++; continue; }
+    if (c === "*") { ctx.grid *= 2; i++; continue; }
+    if (c === "=") {
+      const m = /^=([.0-9]+)/.exec(source.slice(i));
+      if (m) { ctx.grid = parseFloat(m[1]); i += m[0].length; continue; }
       i++; continue;
     }
     if (c === "+" && i + 1 < n && /[A-Za-z]/.test(source[i+1])) {
