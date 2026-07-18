@@ -56,8 +56,8 @@ const DIRS = {
   "4": [-1,  0],                "6": [ 1,  0],
   "7": [-1,  1], "8": [ 0,  1], "9": [ 1,  1],
 };
-const LAYERS = new Set(["P","p","Q","q","R","r","S","s","B","T"]);
-const MIRROR_LAYER = { P:"p", p:"P", Q:"q", q:"Q", R:"r", r:"R", S:"s", s:"S", B:"B", T:"T" };
+const LAYERS = new Set(["P","p","Q","q","R","r","S","s","B","T","O","o"]);
+const MIRROR_LAYER = { P:"p", p:"P", Q:"q", q:"Q", R:"r", r:"R", S:"s", s:"S", B:"B", T:"T", O:"B", o:"o" };
 
 const LAYER_COLORS = {
   P: "#e33", p: "#39f",
@@ -129,6 +129,7 @@ function emitPrim(ctx, prim) {
 }
 function drawLine(ctx, x1, y1, x2, y2) {
   if (!ctx.emit) return;
+  if (ctx.layer === "o") return;
   const p1 = transformPt(ctx, x1, y1);
   const p2 = transformPt(ctx, x2, y2);
   const layer = transformLayer(ctx, ctx.layer);
@@ -139,6 +140,7 @@ function drawLine(ctx, x1, y1, x2, y2) {
 }
 function drawCircle(ctx, cx, cy, r, layerLetter) {
   if (!ctx.emit) return;
+  if (layerLetter === "o") return;
   const p = transformPt(ctx, cx, cy);
   const layer = transformLayer(ctx, layerLetter);
   emitPrim(ctx, { type:"circle", cx:p.x, cy:p.y, r, layer });
@@ -147,6 +149,7 @@ function drawCircle(ctx, cx, cy, r, layerLetter) {
 }
 function drawRect(ctx, x1, y1, x2, y2, layerLetter) {
   if (!ctx.emit) return;
+  if (layerLetter === "o") return;
   const p1 = transformPt(ctx, x1, y1);
   const p2 = transformPt(ctx, x2, y2);
   const layer = transformLayer(ctx, layerLetter);
@@ -254,6 +257,13 @@ function runSource(ctx, source) {
     if (c === "!") {
       const mv = parseMove(source, i + 1);
       if (mv) { applyMove(ctx, mv.x, mv.y, true); i = mv.end; continue; }
+      const nc = source[i + 1];
+      if (nc && /[12346789]/.test(nc)) {
+        const [dx, dy] = DIRS[nc];
+        ctx.x += dx * ctx.grid;
+        ctx.y += dy * ctx.grid;
+        i += 2; continue;
+      }
       i++; continue;
     }
     if (/[12346789]/.test(c)) {
@@ -286,21 +296,21 @@ function runSource(ctx, source) {
     if (LAYERS.has(c)) {
       const rest = source.slice(i);
       let mm;
-      if (mm = /^([PpQqRrSsBT])@([.0-9]+)/.exec(rest)) {
-        const layer = mm[1], dia = parseFloat(mm[2]);
+      if (mm = /^([PpQqRrSsBTOo])@([.0-9]+)/.exec(rest)) {
+        const layer = mm[1] === "O" ? "B" : mm[1], dia = parseFloat(mm[2]);
         ctx.layer = layer; ctx.width = dia;
         drawCircle(ctx, ctx.x, ctx.y, dia / 2, layer);
         i += mm[0].length; continue;
       }
-      if (mm = /^([PpQqRrSsBT])((?:[-+][.0-9]+){4})/.exec(rest)) {
-        const layer = mm[1];
+      if (mm = /^([PpQqRrSsBTOo])((?:[-+][.0-9]+){4})/.exec(rest)) {
+        const layer = mm[1] === "O" ? "B" : mm[1];
         const nums = mm[2].match(/[-+][.0-9]+/g).map(parseFloat);
         ctx.layer = layer;
         drawRect(ctx, ctx.x + nums[0], ctx.y + nums[1], ctx.x + nums[2], ctx.y + nums[3], layer);
         i += mm[0].length; continue;
       }
-      if (mm = /^([PpQqRrSsBT])([236])/.exec(rest)) {
-        ctx.layer = mm[1]; ctx.width = WIDTHS[mm[2]];
+      if (mm = /^([PpQqRrSsBTOo])([236])/.exec(rest)) {
+        ctx.layer = mm[1] === "O" ? "B" : mm[1]; ctx.width = WIDTHS[mm[2]];
         i += mm[0].length; continue;
       }
       i++; continue;
