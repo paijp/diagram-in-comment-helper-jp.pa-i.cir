@@ -290,9 +290,13 @@ function runSource(ctx, source) {
       i += full.length; continue;
     }
     if (LAYERS.has(c)) {
-      if (c === "o") { ctx.layer = "o"; i++; continue; }
       const rest = source.slice(i);
       let mm;
+      if (mm = /^([PpQqRrSsBTOo])=([.0-9]+)/.exec(rest)) {
+        ctx.layer = mm[1] === "O" ? "B" : mm[1]; ctx.width = parseFloat(mm[2]);
+        i += mm[0].length; continue;
+      }
+      if (c === "o") { ctx.layer = "o"; i++; continue; }
       if (mm = /^([PpQqRrSsBTO])@([.0-9]+)/.exec(rest)) {
         const layer = mm[1] === "O" ? "B" : mm[1], dia = parseFloat(mm[2]);
         ctx.layer = layer; ctx.width = dia;
