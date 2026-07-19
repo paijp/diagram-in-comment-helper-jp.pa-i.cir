@@ -20,6 +20,9 @@
   #modes { display: inline-flex; gap: 4px; }
   #modes button { font-size: 12px; padding: 2px 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
   #modes button.active { background: #444; color: #fff; border-color: #444; }
+  #renderers { display: inline-flex; gap: 4px; margin-left: 8px; }
+  #renderers button { font-size: 12px; padding: 2px 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  #renderers button.active { background: #444; color: #fff; border-color: #444; }
   .pane-label .spacer { flex: 1; }
   #src { flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
   .pane-label { padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; color: #555; display: flex; gap: 12px; }
@@ -57,6 +60,7 @@ const DIRS = {
 };
 const LAYERS = new Set(["P","p","Q","q","R","r","S","s","B","T","O","o"]);
 const MIRROR_LAYER = { P:"p", p:"P", Q:"q", q:"Q", R:"r", r:"R", S:"s", s:"S", B:"B", T:"T", O:"B", o:"o" };
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 const LAYER_COLORS = {
   P: "#e33", p: "#39f",
@@ -426,6 +430,107 @@ function rasterizeMask(primitives, layerSet, ext, pxPerMm, flipX) {
   return { data: g.getImageData(0, 0, W, H).data, W, H };
 }
 
+function svgAppendPrim(g, p, color) {
+  if (p.type === "line") {
+    const el = document.createElementNS(SVG_NS, "line");
+    el.setAttribute("x1", p.x1); el.setAttribute("y1", -p.y1);
+    el.setAttribute("x2", p.x2); el.setAttribute("y2", -p.y2);
+    el.setAttribute("stroke", color);
+    el.setAttribute("stroke-width", p.width);
+    el.setAttribute("stroke-linecap", "round");
+    el.setAttribute("fill", "none");
+    g.appendChild(el);
+  } else if (p.type === "circle") {
+    const el = document.createElementNS(SVG_NS, "circle");
+    el.setAttribute("cx", p.cx); el.setAttribute("cy", -p.cy);
+    el.setAttribute("r", p.r);
+    el.setAttribute("fill", color);
+    g.appendChild(el);
+  } else if (p.type === "rect") {
+    const el = document.createElementNS(SVG_NS, "rect");
+    el.setAttribute("x", p.x); el.setAttribute("y", -(p.y + p.h));
+    el.setAttribute("width", p.w); el.setAttribute("height", p.h);
+    el.setAttribute("fill", color);
+    g.appendChild(el);
+  }
+}
+function svgLayerGroup(prims, layerSet, color) {
+  const g = document.createElementNS(SVG_NS, "g");
+  for (const p of prims) {
+    if (!layerSet.has(p.layer)) continue;
+    svgAppendPrim(g, p, color);
+  }
+  return g;
+}
+function renderSvg(ctx, mode) {
+  const ext = computeExtent(ctx.bbox);
+  const pxPerMm = 16;
+  const W = Math.max(1, Math.round(ext.w * pxPerMm));
+  const H = Math.max(1, Math.round(ext.h * pxPerMm));
+  const prims = ctx.primitives;
+  const flipX = (mode === "bottom");
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("xmlns", SVG_NS);
+  svg.setAttribute("width", W);
+  svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", ext.minX + " " + (-ext.maxY) + " " + ext.w + " " + ext.h);
+  svg.setAttribute("shape-rendering", "geometricPrecision");
+  if (flipX) svg.style.transform = "scaleX(-1)";
+  function bgRect(color) {
+    const r = document.createElementNS(SVG_NS, "rect");
+    r.setAttribute("x", ext.minX); r.setAttribute("y", -ext.maxY);
+    r.setAttribute("width", ext.w); r.setAttribute("height", ext.h);
+    r.setAttribute("fill", color);
+    return r;
+  }
+  if (mode === "pattern") {
+    svg.appendChild(bgRect("#fff"));
+    const groups = [
+      [new Set(["S","s"]), "#ff0"],
+      [new Set(["P"]),     "#f0f"],
+      [new Set(["p"]),     "#0ff"],
+    ];
+    for (const [layers, color] of groups) {
+      const g = svgLayerGroup(prims, layers, color);
+      g.style.mixBlendMode = "multiply";
+      svg.appendChild(g);
+    }
+    svg.appendChild(svgLayerGroup(prims, new Set(["B","T"]), "#000"));
+  } else {
+    const P = (mode === "bottom") ? "p" : "P";
+    const R = (mode === "bottom") ? "r" : "R";
+    const S = (mode === "bottom") ? "s" : "S";
+    svg.appendChild(bgRect("#ff0"));
+    svg.appendChild(svgLayerGroup(prims, new Set([R]), "#fff"));
+    svg.appendChild(svgLayerGroup(prims, new Set([S]), "#f0f"));
+    const maskId = "pmask-" + Math.floor(Math.random() * 1e9).toString(36);
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const mask = document.createElementNS(SVG_NS, "mask");
+    mask.setAttribute("id", maskId);
+    mask.setAttribute("maskUnits", "userSpaceOnUse");
+    mask.setAttribute("x", ext.minX);
+    mask.setAttribute("y", -ext.maxY);
+    mask.setAttribute("width", ext.w);
+    mask.setAttribute("height", ext.h);
+    const mbg = document.createElementNS(SVG_NS, "rect");
+    mbg.setAttribute("x", ext.minX); mbg.setAttribute("y", -ext.maxY);
+    mbg.setAttribute("width", ext.w); mbg.setAttribute("height", ext.h);
+    mbg.setAttribute("fill", "#000");
+    mask.appendChild(mbg);
+    mask.appendChild(svgLayerGroup(prims, new Set([P]), "#fff"));
+    defs.appendChild(mask);
+    svg.appendChild(defs);
+    const masked = document.createElementNS(SVG_NS, "g");
+    masked.setAttribute("mask", "url(#" + maskId + ")");
+    masked.appendChild(bgRect("#0f0"));
+    masked.appendChild(svgLayerGroup(prims, new Set([R]), "#0ff"));
+    masked.appendChild(svgLayerGroup(prims, new Set([S]), "#00f"));
+    svg.appendChild(masked);
+    svg.appendChild(svgLayerGroup(prims, new Set(["B","T"]), "#000"));
+  }
+  return svg;
+}
+
 function renderCanvas(ctx, mode) {
   const ext = computeExtent(ctx.bbox);
   const pxPerMm = 16;
@@ -635,6 +740,10 @@ function renderEditor(f) {
           <button data-mode="bottom">半田面</button>
           <button data-mode="pattern">パターン</button>
         </span>
+        <span id="renderers">
+          <button data-renderer="canvas">Canvas</button>
+          <button data-renderer="svg">SVG</button>
+        </span>
         <span class="err" id="errors"></span>
       </div>
       <div id="preview"></div>
@@ -650,12 +759,13 @@ function renderEditor(f) {
   srcEl.value = f.content;
 
   let mode = renderEditor._mode || "top";
+  renderEditor._renderer = renderEditor._renderer || localStorage.getItem("pcb10-preview.renderer") || "canvas";
 
   function update() {
     const ctx = interpret(srcEl.value);
-    const canvas = renderCanvas(ctx, mode);
+    const view = (renderEditor._renderer === "svg" ? renderSvg : renderCanvas)(ctx, mode);
     previewEl.innerHTML = "";
-    previewEl.appendChild(canvas);
+    previewEl.appendChild(view);
     if (isFinite(ctx.bbox.minX)) {
       const w = (ctx.bbox.maxX - ctx.bbox.minX).toFixed(2);
       const h = (ctx.bbox.maxY - ctx.bbox.minY).toFixed(2);
@@ -672,6 +782,19 @@ function renderEditor(f) {
     b.addEventListener("click", () => {
       mode = b.dataset.mode;
       renderEditor._mode = mode;
+      update();
+    });
+  });
+  function refreshRendererButtons() {
+    document.querySelectorAll("#renderers button").forEach(bb =>
+      bb.classList.toggle("active", bb.dataset.renderer === renderEditor._renderer));
+  }
+  refreshRendererButtons();
+  document.querySelectorAll("#renderers button").forEach(b => {
+    b.addEventListener("click", () => {
+      renderEditor._renderer = b.dataset.renderer;
+      localStorage.setItem("pcb10-preview.renderer", renderEditor._renderer);
+      refreshRendererButtons();
       update();
     });
   });
