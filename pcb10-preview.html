@@ -104,6 +104,23 @@ function applyRotFlip(t, x, y) {
   return { x: px, y: py };
 }
 
+function composeTransform(outer, inner) {
+  // Returns the transform equivalent to applying `inner` then `outer`.
+  // Needed so a component called from inside another component body
+  // inherits the outer placement (offset, rotation and mirror).
+  if (!outer) return inner;
+  const so = outer.flip ? -1 : 1;
+  const eo = ((outer.angle * so) % 360 + 360) % 360;
+  const si = inner.flip ? -1 : 1;
+  const ei = ((inner.angle * si) % 360 + 360) % 360;
+  const flip = outer.flip !== inner.flip;
+  const ec = ((eo + ei * so) % 360 + 360) % 360;
+  const sc = flip ? -1 : 1;
+  const angle = ((ec * sc) % 360 + 360) % 360;
+  const r = applyRotFlip({ flip: outer.flip, angle: outer.angle, offsetX: 0, offsetY: 0 }, inner.offsetX, inner.offsetY);
+  return { flip, angle, offsetX: r.x + outer.offsetX, offsetY: r.y + outer.offsetY };
+}
+
 function transformPt(ctx, x, y) {
   if (!ctx.transform) return { x, y };
   const r = applyRotFlip(ctx.transform, x, y);
@@ -366,9 +383,10 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
   const anchorLocal = (pinName && def.pins[pinName]) ? def.pins[pinName] : def.defaultPin;
   const t0 = { flip, angle, offsetX: 0, offsetY: 0 };
   const ar = applyRotFlip(t0, anchorLocal.x, anchorLocal.y);
-  const offsetX = ctx.x - ar.x;
-  const offsetY = ctx.y - ar.y;
-  const transform = { flip, angle, offsetX, offsetY };
+  // Local transform maps component-local coords into the caller's frame;
+  // the world transform composes that with the caller's own frame.
+  const localTransform = { flip, angle, offsetX: ctx.x - ar.x, offsetY: ctx.y - ar.y };
+  const transform = composeTransform(ctx.transform, localTransform);
 
   // Render component body (in its own coordinate frame, drawing enabled iff caller is emitting).
   const sub = {
@@ -384,7 +402,8 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
   }
 
   // Execute the call block with called component's pin scope active.
-  ctx.pinScopes.push({ pins: def.pins, transform });
+  // The scope keeps the local transform: ctx.x/ctx.y are caller-local.
+  ctx.pinScopes.push({ pins: def.pins, transform: localTransform });
   runSource(ctx, callBody);
   ctx.pinScopes.pop();
 }
