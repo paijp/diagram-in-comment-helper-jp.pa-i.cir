@@ -658,6 +658,241 @@ function renderCanvas(ctx, mode) {
   return out;
 }
 
+function sanitizeProjectName(name) {
+  const s = String(name || "board").replace(/[^A-Za-z0-9._\-]/g, "_").replace(/^_+|_+$/g, "");
+  return s || "board";
+}
+function timestampStr() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
+}
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- PDF export via browser print ---------- */
+function renderSvgAtMm(ctx, mode) {
+  const svg = renderSvg(ctx, mode);
+  const ext = computeExtent(ctx.bbox);
+  svg.setAttribute("width", ext.w + "mm");
+  svg.setAttribute("height", ext.h + "mm");
+  svg.removeAttribute("style");
+  if (mode === "bottom") svg.setAttribute("style", "transform:scaleX(-1)");
+  return svg;
+}
+function exportPdf(ctx, projectName) {
+  const ext = computeExtent(ctx.bbox);
+  const bw = ext.w, bh = ext.h;
+  const PAPERS = [
+    { n: "A4P", w: 210, h: 297 },
+    { n: "A4L", w: 297, h: 210 },
+    { n: "A3P", w: 297, h: 420 },
+    { n: "A3L", w: 420, h: 297 },
+  ];
+  const pageMargin = 8;
+  let paper = null;
+  for (const q of PAPERS) {
+    if (bw + 2 * pageMargin <= q.w && bh + 2 * pageMargin <= q.h) { paper = q; break; }
+  }
+  if (!paper) { alert("基板が A3 に入りません (" + bw.toFixed(1) + " × " + bh.toFixed(1) + " mm)"); return; }
+  const modeNames = { top: "部品面", bottom: "半田面", pattern: "パターン (透過)" };
+  const modes = ["top", "bottom", "pattern"];
+  const title = sanitizeProjectName(projectName) + "_" + timestampStr();
+  const w = window.open("", "_blank");
+  if (!w) { alert("ポップアップがブロックされました。ブラウザの設定でこのサイトを許可してください。"); return; }
+  const doc = w.document;
+  const style = "@page { size: " + paper.w + "mm " + paper.h + "mm; margin: 0; }" +
+    " html, body { margin: 0; padding: 0; }" +
+    " .page { width: " + paper.w + "mm; height: " + paper.h + "mm; page-break-after: always; position: relative; box-sizing: border-box; overflow: hidden; }" +
+    " .page:last-child { page-break-after: auto; }" +
+    " .center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }" +
+    " .label { position: absolute; left: 8mm; top: 8mm; font-family: sans-serif; font-size: 9pt; color: #333; }" +
+    " svg { display: block; }";
+  doc.open();
+  doc.write("<!doctype html><html><head><meta charset=\"utf-8\"><title>" + title + "</title><style>" + style + "</style></head><body>" +
+    modes.map(m => "<div class=\"page\"><div class=\"label\">" + title + " — " + modeNames[m] + " (" + paper.n + ", " + bw.toFixed(2) + "×" + bh.toFixed(2) + " mm)</div><div class=\"center\" id=\"c-" + m + "\"></div></div>").join("") +
+    "</body></html>");
+  doc.close();
+  for (const m of modes) {
+    const svg = renderSvgAtMm(ctx, m);
+    doc.getElementById("c-" + m).appendChild(svg);
+  }
+  setTimeout(() => { w.focus(); w.print(); }, 200);
+}
+
+/* ---------- Gerber + ZIP export ---------- */
+const CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC32_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function buildZip(entries) {
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+  const enc = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  for (const e of entries) {
+    const nameBytes = enc.encode(e.name);
+    const crc = crc32(e.data);
+    const size = e.data.length;
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, dosTime, true);
+    lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    lh.set(nameBytes, 30);
+    chunks.push(lh, e.data);
+    const cd = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(cd.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, dosTime, true);
+    cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    cd.set(nameBytes, 46);
+    central.push(cd);
+    offset += lh.length + e.data.length;
+  }
+  const cdOffset = offset;
+  let cdSize = 0;
+  for (const c of central) cdSize += c.length;
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, cdOffset, true);
+  ev.setUint16(20, 0, true);
+  const total = offset + cdSize + eocd.length;
+  const out = new Uint8Array(total);
+  let p = 0;
+  for (const c of chunks) { out.set(c, p); p += c.length; }
+  for (const c of central) { out.set(c, p); p += c.length; }
+  out.set(eocd, p);
+  return out;
+}
+function fmtGerberCoord(mm) {
+  const v = Math.round(mm * 100000);
+  return (v < 0 ? "-" : "") + Math.abs(v).toString();
+}
+function fmtNum5(n) {
+  return (Math.round(n * 100000) / 100000).toString();
+}
+function buildGerberFile(prims, layerSet, title) {
+  const lines = [];
+  lines.push("G04 " + title + " *");
+  lines.push("%FSLAX45Y45*%");
+  lines.push("%MOMM*%");
+  lines.push("%LPD*%");
+  lines.push("G01*");
+  const apertures = new Map();
+  const defs = [];
+  let nextDcode = 10;
+  function apKey(p) {
+    if (p.type === "line") return "C:" + fmtNum5(p.width);
+    if (p.type === "circle") return "C:" + fmtNum5(2 * p.r);
+    if (p.type === "rect") return "R:" + fmtNum5(p.w) + "x" + fmtNum5(p.h);
+    return null;
+  }
+  function apDef(p) {
+    if (p.type === "line") return "C," + fmtNum5(p.width);
+    if (p.type === "circle") return "C," + fmtNum5(2 * p.r);
+    if (p.type === "rect") return "R," + fmtNum5(p.w) + "X" + fmtNum5(p.h);
+    return null;
+  }
+  const usable = [];
+  for (const p of prims) {
+    if (!layerSet.has(p.layer)) continue;
+    const key = apKey(p);
+    if (!key) continue;
+    if (!apertures.has(key)) {
+      const dcode = nextDcode++;
+      apertures.set(key, dcode);
+      defs.push("%ADD" + dcode + apDef(p) + "*%");
+    }
+    usable.push({ p, dcode: apertures.get(key) });
+  }
+  for (const d of defs) lines.push(d);
+  let curDcode = null;
+  for (const { p, dcode } of usable) {
+    if (dcode !== curDcode) { lines.push("D" + dcode + "*"); curDcode = dcode; }
+    if (p.type === "line") {
+      lines.push("X" + fmtGerberCoord(p.x1) + "Y" + fmtGerberCoord(p.y1) + "D02*");
+      lines.push("X" + fmtGerberCoord(p.x2) + "Y" + fmtGerberCoord(p.y2) + "D01*");
+    } else if (p.type === "circle") {
+      lines.push("X" + fmtGerberCoord(p.cx) + "Y" + fmtGerberCoord(p.cy) + "D03*");
+    } else if (p.type === "rect") {
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      lines.push("X" + fmtGerberCoord(cx) + "Y" + fmtGerberCoord(cy) + "D03*");
+    }
+  }
+  lines.push("M02*");
+  return lines.join("\n") + "\n";
+}
+function exportGerber(ctx, projectName) {
+  const name = sanitizeProjectName(projectName);
+  const prims = ctx.primitives;
+  const spec = [
+    { ext: "GTL", layer: "P", title: "Top Copper" },
+    { ext: "GBL", layer: "p", title: "Bottom Copper" },
+    { ext: "GTS", layer: "R", title: "Top Solder Mask" },
+    { ext: "GBS", layer: "r", title: "Bottom Solder Mask" },
+    { ext: "GTO", layer: "S", title: "Top Silk" },
+    { ext: "GBO", layer: "s", title: "Bottom Silk" },
+    { ext: "GKO", layer: "B", title: "Board Outline" },
+    { ext: "DRL.GBR", layer: "T", title: "Drill" },
+  ];
+  const enc = new TextEncoder();
+  const entries = spec.map(s => ({
+    name: name + "." + s.ext,
+    data: enc.encode(buildGerberFile(prims, new Set([s.layer]), name + " " + s.title)),
+  }));
+  const zip = buildZip(entries);
+  const blob = new Blob([zip], { type: "application/zip" });
+  triggerDownload(blob, name + "_" + timestampStr() + ".zip");
+}
+
 function interpret(source) {
   const ctx = makeCtx();
   try { runSource(ctx, source); }
@@ -796,6 +1031,8 @@ function renderEditor(f) {
       <a id="back-link">← 一覧</a>
       <input class="title" id="title" value="${escXml(f.title)}">
       <span class="spacer"></span>
+      <button id="pdf-btn">PDF</button>
+      <button id="gerber-btn">Gerber</button>
       <span id="status" style="color:#888;font-size:12px">保存済み</span>
     </header>
     <main>
@@ -828,8 +1065,10 @@ function renderEditor(f) {
   let mode = renderEditor._mode || "top";
   renderEditor._renderer = renderEditor._renderer || localStorage.getItem("pcb10-preview.renderer") || "canvas";
 
+  let lastCtx = null;
   function update() {
     const ctx = interpret(srcEl.value);
+    lastCtx = ctx;
     const view = (renderEditor._renderer === "svg" ? renderSvg : renderCanvas)(ctx, mode);
     previewEl.innerHTML = "";
     previewEl.appendChild(view);
@@ -876,6 +1115,12 @@ function renderEditor(f) {
     statusEl.textContent = "保存中…";
     saveFile(f.id, { title: titleEl.value });
     statusEl.textContent = "保存済み";
+  });
+  document.getElementById("pdf-btn").addEventListener("click", () => {
+    if (lastCtx) exportPdf(lastCtx, titleEl.value);
+  });
+  document.getElementById("gerber-btn").addEventListener("click", () => {
+    if (lastCtx) exportGerber(lastCtx, titleEl.value);
   });
   document.getElementById("back-link").addEventListener("click", () => go(""));
 }
