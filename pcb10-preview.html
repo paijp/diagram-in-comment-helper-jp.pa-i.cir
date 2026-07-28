@@ -438,7 +438,9 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
   const sub = {
     ...ctx,
     x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
-    stack: [], pinScopes: [], currentDef: null,
+    // currentDef stays set so @=pin in the body is a harmless re-registration
+    // (same local coords as the dry pass) instead of an error.
+    stack: [], pinScopes: [], currentDef: def,
     emit: ctx.emit, transform, env: def.env, depth,
   };
   runSource(sub, def.body);
