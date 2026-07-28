@@ -282,6 +282,62 @@ function handleAt(ctx, source, i, moveOnly) {
   return i + full.length;
 }
 
+function moveOnlyAt(ctx, source, k) {
+  // Advance the pen without drawing, over whatever target form starts at k
+  // (+0+0 / -aa / a direction digit / @pin). Returns the next source index,
+  // or -1 when nothing there is a move. Shared by "!" and the {ab} dogleg.
+  const mv = parseMove(source, k);
+  if (mv) { applyMove(ctx, mv.x, mv.y, true); return mv.end; }
+  const nc = source[k];
+  if (nc && /[12346789]/.test(nc)) {
+    const [dx, dy] = DIRS[nc];
+    ctx.x += dx * ctx.grid;
+    ctx.y += dy * ctx.grid;
+    return k + 1;
+  }
+  if (nc === "@") return handleAt(ctx, source, k, true);
+  return -1;
+}
+
+function solveDogleg(x0, y0, x1, y1, d1, d2) {
+  // Find the elbow E with E = start + s*d1 and target = E + t*d2, s,t >= 0.
+  // Returns null when the pair cannot reach the target that way (parallel
+  // directions, or an elbow that would run backwards) — behaviour there is
+  // unspecified, so the caller falls back to a straight line.
+  const [ax, ay] = d1, [bx, by] = d2;
+  const det = ax * by - ay * bx;
+  if (Math.abs(det) < 1e-12) return null;
+  const dx = x1 - x0, dy = y1 - y0;
+  const s = (dx * by - dy * bx) / det;
+  const t = (ax * dy - ay * dx) / det;
+  if (s < -1e-9 || t < -1e-9) return null;
+  return { x: x0 + s * ax, y: y0 + s * ay };
+}
+
+function drawSeg(ctx, x1, y1, x2, y2) {
+  if (Math.abs(x2 - x1) < 1e-12 && Math.abs(y2 - y1) < 1e-12) return;
+  drawLine(ctx, x1, y1, x2, y2);
+}
+
+function handleDogleg(ctx, source, i, d1, d2) {
+  // {ab}<target>: draw to <target> as two segments, along d1 then along d2.
+  const x0 = ctx.x, y0 = ctx.y;
+  const ni = moveOnlyAt(ctx, source, i);
+  if (ni < 0) return -1;
+  const x1 = ctx.x, y1 = ctx.y;
+  if (Math.abs(x1 - x0) < 1e-12 && Math.abs(y1 - y0) < 1e-12) return ni;
+  const mid = solveDogleg(x0, y0, x1, y1, d1, d2);
+  if (mid) {
+    // Either leg is empty when the target already lies on one direction;
+    // skip it so a degenerate elbow does not leave a stray round dot.
+    drawSeg(ctx, x0, y0, mid.x, mid.y);
+    drawSeg(ctx, mid.x, mid.y, x1, y1);
+  } else {
+    drawLine(ctx, x0, y0, x1, y1);
+  }
+  return ni;
+}
+
 function runSource(ctx, source) {
   let i = 0;
   const n = source.length;
@@ -318,17 +374,14 @@ function runSource(ctx, source) {
       i++; continue;
     }
     if (c === "!") {
-      const mv = parseMove(source, i + 1);
-      if (mv) { applyMove(ctx, mv.x, mv.y, true); i = mv.end; continue; }
-      const nc = source[i + 1];
-      if (nc && /[12346789]/.test(nc)) {
-        const [dx, dy] = DIRS[nc];
-        ctx.x += dx * ctx.grid;
-        ctx.y += dy * ctx.grid;
-        i += 2; continue;
-      }
-      if (nc === "@") {
-        const ni = handleAt(ctx, source, i + 1, true);
+      const ni = moveOnlyAt(ctx, source, i + 1);
+      if (ni >= 0) { i = ni; continue; }
+      i++; continue;
+    }
+    if (c === "{") {
+      const dg = /^\{([12346789])([12346789])\}/.exec(source.slice(i));
+      if (dg) {
+        const ni = handleDogleg(ctx, source, i + dg[0].length, DIRS[dg[1]], DIRS[dg[2]]);
         if (ni >= 0) { i = ni; continue; }
       }
       i++; continue;
