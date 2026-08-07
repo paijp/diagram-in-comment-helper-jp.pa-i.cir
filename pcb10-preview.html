@@ -24,7 +24,10 @@
   #renderers button { font-size: 12px; padding: 2px 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
   #renderers button.active { background: #444; color: #fff; border-color: #444; }
   .pane-label .spacer { flex: 1; }
-  #src { flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; border: 0; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: none; outline: none; }
+  /* Editor text sized to match the comictest editor: 20px / 1.4. */
+  #src { flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; border: 0; padding: 10px;
+         font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; line-height: 1.4;
+         -webkit-text-size-adjust: 100%; resize: none; outline: none; }
   .pane-label { padding: 4px 10px; font-size: 12px; background: #f6f6f6; border-bottom: 1px solid #ddd; color: #555; display: flex; gap: 12px; }
   .pane-label .err { color: #c00; }
 
