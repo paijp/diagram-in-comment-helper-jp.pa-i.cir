@@ -504,6 +504,9 @@ function runSource(ctx, source) {
         const ni = handleDogleg(ctx, source, i + dg[0].length, DIRS[dg[1]], DIRS[dg[2]]);
         if (ni >= 0) { i = ni; continue; }
       }
+      // A literal {} does nothing, and is consumed as a unit so its '}'
+      // can never be taken as the close of some earlier '{'.
+      if (source[i + 1] === "}") { i += 2; continue; }
       i++; continue;
     }
     if (/[12346789]/.test(c)) {
@@ -552,7 +555,7 @@ function runSource(ctx, source) {
       const count = j - i;
       // definition: > + '='
       if (c === ">" && j < n && source[j] === "=") {
-        const nm = /^([A-Za-z_][A-Za-z0-9_]*)\{/.exec(source.slice(j + 1));
+        const nm = /^([A-Za-z_][A-Za-z0-9_]*)\s*\{/.exec(source.slice(j + 1));
         if (!nm) { i = j + 1; continue; }
         const compName = nm[1];
         const braceStart = j + 1 + nm[0].length - 1;
@@ -573,17 +576,19 @@ function runSource(ctx, source) {
         (ctx.env || ctx.components)[compName] = def;
         i = braceEnd + 1; continue;
       }
-      // text: '{' straight after the chevrons, e.g. >{abc} or <{abc}
-      if (source[j] === "{") {
+      // text: a '{' with no name before it, e.g. >{abc} or <{abc}
+      let jt = j;
+      while (jt < n && /\s/.test(source[jt])) jt++;
+      if (source[jt] === "{") {
         // Read to the first '}': text is literal, so no comment or nesting
         // handling applies inside it (a '}' cannot appear in the text).
-        const close = source.indexOf("}", j + 1);
+        const close = source.indexOf("}", jt + 1);
         const end = close < 0 ? source.length : close;
-        drawText(ctx, source.slice(j + 1, end), c === "<", ((count - 1) * 90) % 360);
+        drawText(ctx, source.slice(jt + 1, end), c === "<", ((count - 1) * 90) % 360);
         i = close < 0 ? source.length : close + 1; continue;
       }
       // call: (label=)? name (@pin)? {
-      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z0-9_]+))?(\{)?/.exec(source.slice(j));
+      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z0-9_]+))?\s*(\{)?/.exec(source.slice(j));
       const [full, label, compName, pinName, brace] = cm;
       if (!compName) { i++; continue; }
       // The call block is optional: >name means the same as >name{}.
