@@ -553,9 +553,14 @@ function runSource(ctx, source) {
         i = close < 0 ? source.length : close + 1; continue;
       }
       // call: (label=)? name (@pin)? {
-      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z_][A-Za-z0-9_]*))?\{/.exec(source.slice(j));
-      if (!cm) { i++; continue; }
-      const [full, label, compName, pinName] = cm;
+      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z_][A-Za-z0-9_]*))?(\{)?/.exec(source.slice(j));
+      const [full, label, compName, pinName, brace] = cm;
+      if (!compName) { i++; continue; }
+      // The call block is optional: >name means the same as >name{}.
+      if (!brace) {
+        executeCall(ctx, c, count, label, compName, pinName, "");
+        i = j + full.length; continue;
+      }
       const braceStart = j + cm[0].length - 1;
       const braceEnd = findMatchingBrace(source, braceStart);
       const callBody = source.slice(braceStart + 1, braceEnd);
