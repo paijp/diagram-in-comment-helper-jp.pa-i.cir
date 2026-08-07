@@ -282,6 +282,70 @@ function handleAt(ctx, source, i, moveOnly) {
   return i + full.length;
 }
 
+/* ---------- stroke font (built-in, ASCII 0x20-0x7E) ---------- */
+// Glyphs live on a 4-wide grid: baseline y=0, x-height y=4, cap height y=6,
+// descender y=-2. Encoded as comma-separated polylines, each point a pair of
+// digits "xy" with y biased by +2 so the range -2..7 stays one digit.
+const FONT = {
+  " ":"","!":"2824,2322","\"":"1816,3836","#":"1812,3832,0646,0444","$":"473818070615354443321203,2921",
+  "%":"0608282606,2224444222,0248","&":"42151728373603123243","'":"2826","(":"38161432",")":"18363412",
+  "*":"2723,0644,4604","+":"2723,0545",",":"232211","-":"0545",".":"2322","/":"0248",
+  "0":"123243473818070312,0347","1":"062822,0242","2":"07183847460242","3":"084825354443321203",
+  "4":"32380444","5":"480805354443321203","6":"473818070312324344351504","7":"084812",
+  "8":"15060718384746351504031232434435","9":"031232434738180706153546",":":"2625,2322",";":"2625,232211",
+  "<":"470543","=":"0646,0444",">":"074503","?":"07183847462524,2322","@":"3626243437474332120307183847",
+  "A":"022842,1434","B":"02083847463505,3544433202","C":"4738180703123243","D":"02083847433202",
+  "E":"48080242,0535","F":"480802,0535","G":"47381807031232434525","H":"0802,4842,0545","I":"1838,2822,1232",
+  "J":"3833221203","K":"0802,4804,1542","L":"080242","M":"0208254842","N":"02084248","O":"123243473818070312",
+  "P":"02083847463505","Q":"123243473818070312,2442","R":"02083847463505,2542","S":"473818070615354443321203",
+  "T":"0848,2822","U":"080312324348","V":"082248","W":"0812253248","X":"0842,0248","Y":"082548,2522",
+  "Z":"08480242","[":"38181232","\\":"0842","]":"18383212","^":"062846","_":"0141","`":"1836",
+  "a":"4642,4536160503123243","b":"0802,0312324345361605","c":"4536160503123243","d":"4842,4332120305163645",
+  "e":"04444536160503123243","f":"48382722,1636","g":"4641301001,4332120305163645","h":"0802,0516364542",
+  "i":"2827,2622","j":"3837,3631201001","k":"0802,3603,1432","l":"182822","m":"0602,05162522,25364542",
+  "n":"0602,0516364542","o":"123243453616050312","p":"0600,0312324345361605","q":"4640,4332120305163645",
+  "r":"0602,05163645","s":"45361605143443321203","t":"28233243,1636","u":"060312324346,4342","v":"062246",
+  "w":"0612243246","x":"0642,0246","y":"0603123243,4641301001","z":"06460242","{":"483827261524233242",
+  "|":"2921","}":"081827263524231202","~":"05163445",
+};
+const FONT_CAP = 6;        // cap height, in glyph units
+const FONT_ADVANCE = 6;    // per-character advance, in glyph units
+
+function glyphStrokes(ch) {
+  const enc = FONT[ch];
+  if (enc === undefined) return null;
+  const out = [];
+  for (const poly of enc.split(",")) {
+    const pts = [];
+    for (let k = 0; k + 1 < poly.length; k += 2) pts.push([+poly[k], +poly[k + 1] - 2]);
+    if (pts.length > 1) out.push(pts);
+  }
+  return out;
+}
+
+function drawText(ctx, text, flip, angle) {
+  // One glyph unit is one current line width, so the cap height is
+  // FONT_CAP * width and the text scales with whatever width is in effect.
+  const w = ctx.width;
+  const t = { flip, angle, offsetX: 0, offsetY: 0 };
+  const ox = ctx.x, oy = ctx.y;
+  let pen = 0;
+  for (const ch of text) {
+    const strokes = glyphStrokes(ch);
+    if (strokes) {
+      for (const poly of strokes) {
+        for (let k = 0; k + 1 < poly.length; k++) {
+          const a = applyRotFlip(t, (pen + poly[k][0]) * w, poly[k][1] * w);
+          const b = applyRotFlip(t, (pen + poly[k + 1][0]) * w, poly[k + 1][1] * w);
+          drawLine(ctx, ox + a.x, oy + a.y, ox + b.x, oy + b.y);
+        }
+      }
+    }
+    // Unsupported characters still advance, so columns stay aligned.
+    pen += FONT_ADVANCE;
+  }
+}
+
 function moveOnlyAt(ctx, source, k) {
   // Advance the pen without drawing, over whatever target form starts at k
   // (+0+0 / -aa / a direction digit / @pin). Returns the next source index,
@@ -452,6 +516,15 @@ function runSource(ctx, source) {
         runSource(sub, body);
         (ctx.env || ctx.components)[compName] = def;
         i = braceEnd + 1; continue;
+      }
+      // text: '{' straight after the chevrons, e.g. >{abc} or <{abc}
+      if (source[j] === "{") {
+        // Read to the first '}': text is literal, so no comment or nesting
+        // handling applies inside it (a '}' cannot appear in the text).
+        const close = source.indexOf("}", j + 1);
+        const end = close < 0 ? source.length : close;
+        drawText(ctx, source.slice(j + 1, end), c === "<", ((count - 1) * 90) % 360);
+        i = close < 0 ? source.length : close + 1; continue;
       }
       // call: (label=)? name (@pin)? {
       const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z_][A-Za-z0-9_]*))?\{/.exec(source.slice(j));
