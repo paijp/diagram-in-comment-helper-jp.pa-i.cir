@@ -252,7 +252,10 @@ function moveTo(ctx, nx, ny, moveOnly) {
   ctx.x = nx; ctx.y = ny;
 }
 function registerPin(ctx, name) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+  // Pin names are letters, digits and underscore, and may start with a digit
+  // so values like 100k work. '.' is excluded because it separates
+  // label from pin in @label.pin.
+  if (!/^[A-Za-z0-9_]+$/.test(name)) {
     addError(ctx, "@=" + name + ": not a valid pin name");
     return;
   }
@@ -283,12 +286,14 @@ function handleAt(ctx, source, i, moveOnly) {
     drawText(ctx, text, chev[0] === "<", ((chev.length - 1) * 90) % 360);
     return close < 0 ? source.length : close + 1;
   }
-  const reg = /^@=([A-Za-z_][A-Za-z0-9_]*)/.exec(source.slice(i));
+  // Match dots too, so @=0.1u is reported as an unusable name rather than
+  // quietly registering the pin "0" and running the rest as commands.
+  const reg = /^@=([A-Za-z0-9_.]+)/.exec(source.slice(i));
   if (reg) {
     registerPin(ctx, reg[1]);
     return i + reg[0].length;
   }
-  const m = /^@([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?/.exec(source.slice(i));
+  const m = /^@([A-Za-z0-9_]+)(?:\.([A-Za-z0-9_]+))?/.exec(source.slice(i));
   if (!m) return -1;
   const full = m[0], first = m[1], second = m[2];
   let target = null;
@@ -578,7 +583,7 @@ function runSource(ctx, source) {
         i = close < 0 ? source.length : close + 1; continue;
       }
       // call: (label=)? name (@pin)? {
-      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z_][A-Za-z0-9_]*))?(\{)?/.exec(source.slice(j));
+      const cm = /^(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z0-9_]+))?(\{)?/.exec(source.slice(j));
       const [full, label, compName, pinName, brace] = cm;
       if (!compName) { i++; continue; }
       // The call block is optional: >name means the same as >name{}.
