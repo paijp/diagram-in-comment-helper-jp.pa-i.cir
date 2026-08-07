@@ -643,9 +643,20 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
 
   // Execute the call block with called component's pin scope active.
   // The scope keeps the local transform: ctx.x/ctx.y are caller-local.
+  // The call block behaves as if wrapped in (...): position, layer, width and
+  // grid are restored afterwards, so a block cannot leak state into what
+  // follows. Globals are untouched by this — ctx.vars and ctx.labeledCalls
+  // are shared objects, so +a variables and labels set inside the block
+  // still propagate outwards.
+  const saved = { x: ctx.x, y: ctx.y, layer: ctx.layer, width: ctx.width, grid: ctx.grid };
+  const savedStack = ctx.stack.length;
   ctx.pinScopes.push({ pins: def.pins, transform: localTransform });
   runSource(ctx, callBody);
   ctx.pinScopes.pop();
+  // An unbalanced '(' inside the block would otherwise leak onto the stack.
+  ctx.stack.length = savedStack;
+  ctx.x = saved.x; ctx.y = saved.y;
+  ctx.layer = saved.layer; ctx.width = saved.width; ctx.grid = saved.grid;
 }
 
 /* ---------- Canvas rasterization ---------- */
