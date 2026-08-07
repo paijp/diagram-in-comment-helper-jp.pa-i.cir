@@ -312,6 +312,7 @@ const FONT = {
   "|":"2921","}":"081827263524231202","~":"05163445",
 };
 const FONT_CAP = 6;        // cap height, in glyph units
+const FONT_WIDTH = 4;      // glyph cell width, in glyph units
 const FONT_ADVANCE = 6;    // per-character advance, in glyph units
 
 function glyphStrokes(ch) {
@@ -326,14 +327,31 @@ function glyphStrokes(ch) {
   return out;
 }
 
-function drawText(ctx, text, flip, angle) {
+function drawText(ctx, raw, flip, angle) {
+  // A single space at either end is an alignment marker, not text:
+  //   >{abc}    the text starts at the pen (default)
+  //   >{abc }   the text ends at the pen
+  //   >{ abc }  the text is centred on the pen
+  // Exactly one space is consumed at each end, so >{abc  } draws "abc "
+  // ending at the pen, and >{ abc} draws "abc" starting at it.
+  let text = raw, left = false, right = false;
+  if (text.startsWith(" ")) { left = true; text = text.slice(1); }
+  if (text.endsWith(" "))   { right = true; text = text.slice(0, -1); }
+  const chars = Array.from(text);
+  // Span runs from the left edge of the first cell to the right edge of the
+  // last one, so it excludes the trailing inter-character gap and centring
+  // stays symmetric.
+  const span = chars.length ? chars.length * FONT_ADVANCE - (FONT_ADVANCE - FONT_WIDTH) : 0;
+  const off = right ? (left ? span / 2 : span) : 0;
   // One glyph unit is one current line width, so the cap height is
   // FONT_CAP * width and the text scales with whatever width is in effect.
   const w = ctx.width;
   const t = { flip, angle, offsetX: 0, offsetY: 0 };
   const ox = ctx.x, oy = ctx.y;
-  let pen = 0;
-  for (const ch of text) {
+  // Shifting the pen start in glyph space keeps the anchor on the pen under
+  // any rotation or mirror, since the whole run is transformed afterwards.
+  let pen = -off;
+  for (const ch of chars) {
     const strokes = glyphStrokes(ch);
     if (strokes) {
       for (const poly of strokes) {
