@@ -328,15 +328,20 @@ function glyphStrokes(ch) {
 }
 
 function drawText(ctx, raw, flip, angle) {
-  // A single space at either end is an alignment marker, not text:
+  // A trailing space is an alignment marker rather than text, and a leading
+  // space joins it to mean "centred":
   //   >{abc}    the text starts at the pen (default)
   //   >{abc }   the text ends at the pen
   //   >{ abc }  the text is centred on the pen
   // Exactly one space is consumed at each end, so >{abc  } draws "abc "
-  // ending at the pen, and >{ abc} draws "abc" starting at it.
+  // ending at the pen. A leading space with no trailing one is ordinary
+  // text, so >{ abc} draws " abc" starting at the pen.
   let text = raw, left = false, right = false;
-  if (text.startsWith(" ")) { left = true; text = text.slice(1); }
-  if (text.endsWith(" "))   { right = true; text = text.slice(0, -1); }
+  if (text.endsWith(" ")) {
+    right = true;
+    if (text.length >= 2 && text.startsWith(" ")) { left = true; text = text.slice(1); }
+    text = text.slice(0, -1);
+  }
   const chars = Array.from(text);
   // Span runs from the left edge of the first cell to the right edge of the
   // last one, so it excludes the trailing inter-character gap and centring
