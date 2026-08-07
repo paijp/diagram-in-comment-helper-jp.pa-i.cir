@@ -251,16 +251,41 @@ function moveTo(ctx, nx, ny, moveOnly) {
   if (!moveOnly) drawLine(ctx, ctx.x, ctx.y, nx, ny);
   ctx.x = nx; ctx.y = ny;
 }
+function registerPin(ctx, name) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    addError(ctx, "@=" + name + ": not a valid pin name");
+    return;
+  }
+  if (ctx.currentDef) ctx.currentDef.pins[name] = { x: ctx.x, y: ctx.y };
+  else addError(ctx, "@=" + name + ": not inside a component definition");
+}
+
 function handleAt(ctx, source, i, moveOnly) {
   // Returns the next source index, or -1 when this is not an @ command.
   //   @=pin        register pin on the enclosing component definition
   //   @pin         inside a call block: line to that pin of the called component
   //   @label.pin   line to a pin of a labelled call
   //   !@pin / !@label.pin   same, move only
+  //   @=>{a b}     register pins a and b here, and draw "a b" as silk
+  const dec = /^@=(>+|<+)\{/.exec(source.slice(i));
+  if (dec) {
+    const chev = dec[1];
+    const braceStart = i + dec[0].length - 1;
+    const close = source.indexOf("}", braceStart + 1);
+    const end = close < 0 ? source.length : close;
+    const text = source.slice(braceStart + 1, end);
+    // Every whitespace-separated word becomes a pin at the current point,
+    // then the whole string is drawn, so @=>{a b} is @=a @=b >{a b}.
+    for (const name of text.split(/\s+/)) {
+      if (!name) continue;
+      registerPin(ctx, name);
+    }
+    drawText(ctx, text, chev[0] === "<", ((chev.length - 1) * 90) % 360);
+    return close < 0 ? source.length : close + 1;
+  }
   const reg = /^@=([A-Za-z_][A-Za-z0-9_]*)/.exec(source.slice(i));
   if (reg) {
-    if (ctx.currentDef) ctx.currentDef.pins[reg[1]] = { x: ctx.x, y: ctx.y };
-    else addError(ctx, "@=" + reg[1] + ": not inside a component definition");
+    registerPin(ctx, reg[1]);
     return i + reg[0].length;
   }
   const m = /^@([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?/.exec(source.slice(i));
