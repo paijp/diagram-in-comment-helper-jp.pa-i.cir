@@ -555,9 +555,13 @@ function runSource(ctx, source) {
       const count = j - i;
       // definition: > + '='
       if (c === ">" && j < n && source[j] === "=") {
-        const nm = /^([A-Za-z_][A-Za-z0-9_]*)\s*\{/.exec(source.slice(j + 1));
+        // >=>spec{body} defines the component and places it straight away:
+        // >=>name{...}          is  >=name{...} >name{}
+        // >=>>label=name@pin{...} is >=name{...} >>label=name@pin{}
+        const place = /^(>+|<+)(?:([A-Za-z_][A-Za-z0-9_]*)=)?([A-Za-z_][A-Za-z0-9_]*)(?:@([A-Za-z0-9_]+))?\s*\{/.exec(source.slice(j + 1));
+        const nm = place || /^([A-Za-z_][A-Za-z0-9_]*)\s*\{/.exec(source.slice(j + 1));
         if (!nm) { i = j + 1; continue; }
-        const compName = nm[1];
+        const compName = place ? place[3] : nm[1];
         const braceStart = j + 1 + nm[0].length - 1;
         const braceEnd = findMatchingBrace(source, braceStart);
         const body = source.slice(braceStart + 1, braceEnd);
@@ -574,6 +578,9 @@ function runSource(ctx, source) {
         };
         runSource(sub, body);
         (ctx.env || ctx.components)[compName] = def;
+        // Place it only once the definition is registered, so the call
+        // resolves exactly as a separate >name{} would.
+        if (place) executeCall(ctx, place[1][0], place[1].length, place[2], compName, place[4], "");
         i = braceEnd + 1; continue;
       }
       // text: a '{' with no name before it, e.g. >{abc} or <{abc}
