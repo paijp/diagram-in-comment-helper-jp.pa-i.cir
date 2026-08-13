@@ -54,7 +54,9 @@
  * Coordinate system: mm, x right, y up.
  * =================================================================== */
 
-const WIDTHS = { "2": 0.2, "3": 0.3, "6": 0.6 };
+// Shorthand widths. 2/3/6 read as the value in tenths; 1 is 0.15, a fine
+// line rather than 0.1, so it does not follow that reading.
+const WIDTHS = { "1": 0.15, "2": 0.2, "3": 0.3, "6": 0.6 };
 const INITIAL_GRID = 1;
 const MAX_CALL_DEPTH = 32;
 const DIRS = {
@@ -543,7 +545,7 @@ function runSource(ctx, source) {
         drawRect(ctx, ctx.x + nums[0], ctx.y + nums[1], ctx.x + nums[2], ctx.y + nums[3], layer);
         i += mm[0].length; continue;
       }
-      if (mm = /^([PpQqRrSsBTO])([236])/.exec(rest)) {
+      if (mm = /^([PpQqRrSsBTO])([1236])/.exec(rest)) {
         ctx.layer = mm[1] === "O" ? "B" : mm[1]; ctx.width = WIDTHS[mm[2]];
         i += mm[0].length; continue;
       }
