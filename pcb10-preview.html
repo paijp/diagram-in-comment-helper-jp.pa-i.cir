@@ -575,6 +575,9 @@ function runSource(ctx, source) {
           x: 0, y: 0, layer: "p", width: 0.3, grid: INITIAL_GRID,
           stack: [], pinScopes: [], currentDef: def,
           emit: false, transform: null, env: def.env,
+          // Variables are scoped to the body: the dry pass must not write
+          // through to the caller's, and neither must a placement.
+          vars: { ...ctx.vars },
         };
         runSource(sub, body);
         (ctx.env || ctx.components)[compName] = def;
@@ -641,6 +644,10 @@ function executeCall(ctx, kind, count, label, compName, pinName, callBody) {
     // (same local coords as the dry pass) instead of an error.
     stack: [], pinScopes: [], currentDef: def,
     emit: ctx.emit, transform, env: def.env, depth,
+    // A copy, so the body can read what was already set but its own +a
+    // assignments stay inside the component. Variables set in a call block
+    // or a (...) group are still global.
+    vars: { ...ctx.vars },
   };
   runSource(sub, def.body);
 
