@@ -266,11 +266,14 @@ function moveTo(ctx, nx, ny, moveOnly) {
   if (!moveOnly) drawLine(ctx, ctx.x, ctx.y, nx, ny);
   ctx.x = nx; ctx.y = ny;
 }
-// A bare pin name stays letters, digits and '_', so nothing already written
-// changes meaning: '/', '+' and '@' keep being commands in that position.
-// Every other character is available through the braced form @={...}, which
-// reads to the '}' and so is never ambiguous.
-const BARE_NAME = /^[A-Za-z0-9_]+/;
+// A bare pin name takes letters, digits, '_', '/', '+' and '@', plus '.'
+// between segments (so "0.1u" is one name but "L.{p}" still splits). Those
+// characters otherwise start commands, so a space now separates the two
+// readings: "@=p+a" is a pin called p+a, "@=p +a" registers p and sets the
+// variable a. Anything else -- '-', spaces, punctuation -- goes in the
+// braced form @={...}, which reads to the '}' and is never ambiguous.
+const NAME_SEG = "[A-Za-z0-9_\\/+@]+";
+const BARE_NAME = new RegExp("^" + NAME_SEG + "(?:\\." + NAME_SEG + ")*");
 
 function readName(source, i) {
   // Returns { name, end, braced } for a name starting at i, or null.
@@ -305,6 +308,8 @@ function handleAt(ctx, source, i, moveOnly) {
   //   @=>{a b}     register pins a and b here, and draw "a b" as silk
   //   @={0.1u}     braced name: any characters except '}'
   //   @{0.1u}, @L.{0.1u}, @{L}.{p}   the same, when referring to one
+  //   a bare name may hold . / + @ too, so a space separates commands:
+  //   @=p+a is one pin called p+a, @=p +a registers p and sets variable a
   const dec = /^@=(>+|<+)\{/.exec(source.slice(i));
   if (dec) {
     const chev = dec[1];
@@ -324,12 +329,7 @@ function handleAt(ctx, source, i, moveOnly) {
   if (source[i] === "@" && source[i + 1] === "=") {
     const r = readName(source, i + 2);
     if (r) {
-      // A bare name stops before '.', which would otherwise leave the tail to
-      // run as commands and register a truncated name. '+' and '-' are left
-      // alone: @=p+a really is "register p, then set variable a".
-      if (!r.braced && source[r.end] === ".")
-        addError(ctx, "use @={...} for a pin name containing '.' (near @=" + r.name + ")");
-      else registerPin(ctx, r.name);
+      registerPin(ctx, r.name);
       return r.end;
     }
   }
@@ -337,8 +337,19 @@ function handleAt(ctx, source, i, moveOnly) {
   if (!r1 || !r1.name) return -1;
   let first = r1.name, second = null, end = r1.end;
   if (source[end] === ".") {
+    // @{L}.{p} or @L.{p}: the halves are written separately.
     const r2 = readName(source, end + 1);
     if (r2 && r2.name) { second = r2.name; end = r2.end; }
+  } else if (!r1.braced && first.indexOf(".") >= 0) {
+    // A bare dotted token is either one pin name or label.pin. Prefer a pin
+    // of that exact name in the current scope, so @{0.1u}'s bare spelling
+    // @0.1u finds it; otherwise read it as label.pin, as before.
+    const scope = ctx.pinScopes.length ? ctx.pinScopes[ctx.pinScopes.length - 1] : null;
+    if (!(scope && scope.pins[first])) {
+      const k = first.indexOf(".");
+      second = first.slice(k + 1);
+      first = first.slice(0, k);
+    }
   }
   let target = null;
   if (second) {
