@@ -188,6 +188,18 @@ function drawRect(ctx, x1, y1, x2, y2, layerLetter) {
   updateBBox(ctx, x + w, y + h);
 }
 
+function atLineStart(s, i) {
+  // True when nothing but whitespace separates s[i] from the start of its
+  // line. Used for the reserved '.' line, so a '.' inside a line -- a decimal
+  // point, say -- is left alone.
+  for (let k = i - 1; k >= 0; k--) {
+    const c = s[k];
+    if (c === "\n") return true;
+    if (!/\s/.test(c)) return false;
+  }
+  return true;
+}
+
 function findMatchingBrace(s, start) {
   // s[start] === '{' — return index of matching '}'
   let depth = 1;
@@ -195,6 +207,7 @@ function findMatchingBrace(s, start) {
   while (i < s.length) {
     const c = s[i];
     if (c === "#") { while (i < s.length && s[i] !== "\n") i++; continue; }
+    if (c === "." && atLineStart(s, i)) { while (i < s.length && s[i] !== "\n") i++; continue; }
     if (c === "{") depth++;
     else if (c === "}") { depth--; if (depth === 0) return i; }
     i++;
@@ -467,6 +480,9 @@ function runSource(ctx, source) {
     const c = source[i];
     if (/\s/.test(c)) { i++; continue; }
     if (c === "#") { while (i < n && source[i] !== "\n") i++; continue; }
+    // A '.' at the start of a line reserves that whole line for a command
+    // not yet defined; skip it the way a comment is skipped.
+    if (c === "." && atLineStart(source, i)) { while (i < n && source[i] !== "\n") i++; continue; }
     if (c === "}") { i++; continue; }  // stray close — ignore
     if (c === "(") {
       ctx.stack.push({ x:ctx.x, y:ctx.y, layer:ctx.layer, width:ctx.width, grid:ctx.grid });
