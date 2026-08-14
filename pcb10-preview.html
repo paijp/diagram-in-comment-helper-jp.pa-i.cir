@@ -85,6 +85,7 @@ function makeCtx() {
     vars: {},               // shared (global)
     pinScopes: [],          // shared, but push/pop are localized
     currentDef: null,       // set during definition dry-pass
+    docPins: {},            // pins registered outside any definition
     components: {},         // shared
     labeledCalls: {},       // shared
     primitives: [],         // shared
@@ -295,8 +296,10 @@ function registerPin(ctx, name) {
     addError(ctx, "@=" + name + ": not a valid pin name");
     return;
   }
-  if (ctx.currentDef) ctx.currentDef.pins[name] = { x: ctx.x, y: ctx.y };
-  else addError(ctx, "@=" + name + ": not inside a component definition");
+  // Inside a definition the pin belongs to it; outside, it belongs to the
+  // document, which is what another file placing this one would call.
+  const target = ctx.currentDef ? ctx.currentDef.pins : ctx.docPins;
+  target[name] = { x: ctx.x, y: ctx.y };
 }
 
 function handleAt(ctx, source, i, moveOnly) {
