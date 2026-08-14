@@ -266,11 +266,29 @@ function moveTo(ctx, nx, ny, moveOnly) {
   if (!moveOnly) drawLine(ctx, ctx.x, ctx.y, nx, ny);
   ctx.x = nx; ctx.y = ny;
 }
+// A bare pin name stays letters, digits and '_', so nothing already written
+// changes meaning: '/', '+' and '@' keep being commands in that position.
+// Every other character is available through the braced form @={...}, which
+// reads to the '}' and so is never ambiguous.
+const BARE_NAME = /^[A-Za-z0-9_]+/;
+
+function readName(source, i) {
+  // Returns { name, end, braced } for a name starting at i, or null.
+  if (source[i] === "{") {
+    const close = source.indexOf("}", i + 1);
+    const end = close < 0 ? source.length : close;
+    return { name: source.slice(i + 1, end).trim(),
+             end: close < 0 ? source.length : close + 1, braced: true };
+  }
+  const m = BARE_NAME.exec(source.slice(i));
+  if (!m) return null;
+  return { name: m[0], end: i + m[0].length, braced: false };
+}
+
 function registerPin(ctx, name) {
-  // Pin names are letters, digits and underscore, and may start with a digit
-  // so values like 100k work. '.' is excluded because it separates
-  // label from pin in @label.pin.
-  if (!/^[A-Za-z0-9_]+$/.test(name)) {
+  // Any run of non-whitespace is a usable name; only the spelling of it in
+  // the source is restricted, and the braced form lifts that.
+  if (!name || /\s/.test(name)) {
     addError(ctx, "@=" + name + ": not a valid pin name");
     return;
   }
@@ -285,6 +303,8 @@ function handleAt(ctx, source, i, moveOnly) {
   //   @label.pin   line to a pin of a labelled call
   //   !@pin / !@label.pin   same, move only
   //   @=>{a b}     register pins a and b here, and draw "a b" as silk
+  //   @={0.1u}     braced name: any characters except '}'
+  //   @{0.1u}, @L.{0.1u}, @{L}.{p}   the same, when referring to one
   const dec = /^@=(>+|<+)\{/.exec(source.slice(i));
   if (dec) {
     const chev = dec[1];
@@ -301,16 +321,25 @@ function handleAt(ctx, source, i, moveOnly) {
     drawText(ctx, text, chev[0] === "<", ((chev.length - 1) * 90) % 360);
     return close < 0 ? source.length : close + 1;
   }
-  // Match dots too, so @=0.1u is reported as an unusable name rather than
-  // quietly registering the pin "0" and running the rest as commands.
-  const reg = /^@=([A-Za-z0-9_.]+)/.exec(source.slice(i));
-  if (reg) {
-    registerPin(ctx, reg[1]);
-    return i + reg[0].length;
+  if (source[i] === "@" && source[i + 1] === "=") {
+    const r = readName(source, i + 2);
+    if (r) {
+      // A bare name stops before '.', which would otherwise leave the tail to
+      // run as commands and register a truncated name. '+' and '-' are left
+      // alone: @=p+a really is "register p, then set variable a".
+      if (!r.braced && source[r.end] === ".")
+        addError(ctx, "use @={...} for a pin name containing '.' (near @=" + r.name + ")");
+      else registerPin(ctx, r.name);
+      return r.end;
+    }
   }
-  const m = /^@([A-Za-z0-9_]+)(?:\.([A-Za-z0-9_]+))?/.exec(source.slice(i));
-  if (!m) return -1;
-  const full = m[0], first = m[1], second = m[2];
+  const r1 = readName(source, i + 1);
+  if (!r1 || !r1.name) return -1;
+  let first = r1.name, second = null, end = r1.end;
+  if (source[end] === ".") {
+    const r2 = readName(source, end + 1);
+    if (r2 && r2.name) { second = r2.name; end = r2.end; }
+  }
   let target = null;
   if (second) {
     const call = ctx.labeledCalls[first];
@@ -327,7 +356,7 @@ function handleAt(ctx, source, i, moveOnly) {
     addError(ctx, "@" + first + ": no component call scope (use @=" + first + " to define a pin)");
   }
   if (target) moveTo(ctx, target.x, target.y, moveOnly);
-  return i + full.length;
+  return end;
 }
 
 /* ---------- stroke font (built-in, ASCII 0x20-0x7E) ---------- */
