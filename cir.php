@@ -17,7 +17,28 @@ You should have received a copy of the GNU General Public License along with thi
 
 class	drawobject {
 	var	$l, $t, $r, $b;
+#	draw() returns the SVG of the object. $g is not used: it was the GD image when this script drew a PNG.
+#	Coordinates are the pixel positions of that PNG: the whole drawing is shifted by half a pixel, so that a line
+#	one pixel wide falls on a row of pixels as it did there.
 	function	draw($g, $offx = 0, $offy = 0) {
+		return "";
+	}
+	function	svgline($sx, $sy, $ex, $ey) {
+		return sprintf('<line x1="%s" y1="%s" x2="%s" y2="%s" />', $sx, $sy, $ex, $ey);
+	}
+	function	svgpolygon($a, $fill) {
+		$list = array();
+		for ($i=0; $i<count($a); $i+=2)
+			$list[] = $a[$i].",".$a[$i + 1];
+		return sprintf('<polygon fill="%s" points="%s" />', $fill, implode(" ", $list));
+	}
+#	A string in the place of GD's font 3 (7 x 13 pixels a letter): $x, $y is the upper left corner; with $up the
+#	string runs upward from $x, $y, its letters lying to the right of $x.
+	function	svgtext($x, $y, $s, $fill = "#000000", $up = 0) {
+		$attr = sprintf('stroke="none" fill="%s" textLength="%d" lengthAdjust="spacingAndGlyphs"', $fill, strlen($s) * 7);
+		if (($up))
+			return sprintf('<text %s transform="translate(%s,%s) rotate(-90)">%s</text>', $attr, $x + 10, $y, htmlspecialchars($s));
+		return sprintf('<text %s x="%s" y="%s">%s</text>', $attr, $x, $y + 10, htmlspecialchars($s));
 	}
 }
 
@@ -30,12 +51,11 @@ class	dotobject extends drawobject {
 		$this->b = $y + 1;
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$l = $this->l + $offx;
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
 		$b = $this->b + $offy;
-		imagefilledrectangle($g, $l, $t, $r, $b, $c1);
+		return sprintf('<rect fill="#000000" x="%s" y="%s" width="%s" height="%s" />', $l, $t, $r - $l, $b - $t);
 	}
 }
 
@@ -53,8 +73,7 @@ class	lineobject extends drawobject {
 		$this->b = max($sy, $ey);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c1 = imagecolorresolve($g, 0, 0, 0);
-		imageline($g, $offx + $this->sx, $offy + $this->sy, $offx + $this->ex, $offy + $this->ey, $c1);
+		return $this->svgline($offx + $this->sx, $offy + $this->sy, $offx + $this->ex, $offy + $this->ey);
 	}
 }
 
@@ -67,14 +86,11 @@ class	rectobject extends drawobject {
 		$this->b = max($t, $b);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$l = $this->l + $offx;
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
 		$b = $this->b + $offy;
-		imagefilledrectangle($g, $l, $t, $r, $b, $c0);
-		imagerectangle($g, $l, $t, $r, $b, $c1);
+		return sprintf('<rect fill="#ffffff" x="%s" y="%s" width="%s" height="%s" />', $l, $t, $r - $l, $b - $t);
 	}
 }
 
@@ -87,13 +103,11 @@ class	rectfobject extends drawobject {
 		$this->b = max($t, $b);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$l = $this->l + $offx;
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
 		$b = $this->b + $offy;
-		imagefilledrectangle($g, $l, $t, $r, $b, $c1);
+		return sprintf('<rect fill="#000000" x="%s" y="%s" width="%s" height="%s" />', $l, $t, $r - $l, $b - $t);
 	}
 }
 
@@ -106,14 +120,11 @@ class	ellipseobject extends drawobject {
 		$this->b = max($t, $b);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$l = $this->l + $offx;
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
 		$b = $this->b + $offy;
-		imagefilledellipse($g, ($l + $r) / 2, ($t + $b) / 2, $r - $l, $b - $t, $c0);
-		imageellipse($g, ($l + $r) / 2, ($t + $b) / 2, $r - $l, $b - $t, $c1);
+		return sprintf('<ellipse fill="#ffffff" cx="%s" cy="%s" rx="%s" ry="%s" />', ($l + $r) / 2, ($t + $b) / 2, ($r - $l) / 2, ($b - $t) / 2);
 	}
 }
 
@@ -133,8 +144,6 @@ class	triangleobject extends drawobject {
 		$this->b = max($sy, $my, $ey);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$sx = $this->sx + $offx;
 		$sy = $this->sy + $offy;
 		$mx = $this->mx + $offx;
@@ -142,8 +151,7 @@ class	triangleobject extends drawobject {
 		$ex = $this->ex + $offx;
 		$ey = $this->ey + $offy;
 		$a = array($sx, $sy, $mx, $my, $ex, $ey);
-		imagefilledpolygon($g, $a, count($a) / 2, $c0);
-		imagepolygon($g, $a, count($a) / 2, $c1);
+		return $this->svgpolygon($a, "#ffffff");
 	}
 }
 
@@ -159,8 +167,6 @@ class	boxobject extends drawobject {
 		$this->rotate = $rotate;
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
 		$l = $this->l + $offx;
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
@@ -179,8 +185,7 @@ class	boxobject extends drawobject {
 				$a = array($l + 8, $t, $l, $t + 8, $l, $b, $l, $b, $r, $t);
 				break;
 		}
-		imagefilledpolygon($g, $a, count($a) / 2, $c0);
-		imagepolygon($g, $a, count($a) / 2, $c1);
+		return $this->svgpolygon($a, "#ffffff");
 	}
 }
 
@@ -209,42 +214,22 @@ class	hexobject extends drawobject {
 		}
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c0 = imagecolorresolve($g, 255, 255, 255);
-		$c1 = imagecolorresolve($g, 0, 0, 0);
-		$size = 3;
 		$offc = 4;
 		$offl = 0;
+		$fill = ($this->color)? "#000000" : "#ffffff";
+		$ink = ($this->color)? "#ffffff" : "#000000";
+		$l = $this->l + $offx;
+		$r = $this->r + $offx;
+		$t = $this->t + $offy;
+		$b = $this->b + $offy;
 		if (($this->vx)) {
-			$l = $this->l + $offx;
-			$r = $this->r + $offx;
-			$t = $this->t + $offy;
-			$b = $this->b + $offy;
 			$y = $this->y + $offy;
 			$a = array($l, $y, $l + 3, $t, $r - 3, $t, $r, $y, $r - 3, $b, $l + 3, $b);
-			if (($this->color)) {
-				imagefilledpolygon($g, $a, count($a) / 2, $c1);
-				imagestring($g, $size, $l + $offc, $t + $offl, $this->s, $c0);
-			} else {
-				imagefilledpolygon($g, $a, count($a) / 2, $c0);
-				imagepolygon($g, $a, count($a) / 2, $c1);
-				imagestring($g, $size, $l + $offc, $t + $offl, $this->s, $c1);
-			}
-		} else {
-			$l = $this->l + $offx;
-			$r = $this->r + $offx;
-			$t = $this->t + $offy;
-			$b = $this->b + $offy;
-			$x = $this->x + $offx;
-			$a = array($x, $t, $r, $t + 3, $r, $b - 3, $x, $b, $l, $b - 3, $l, $t + 3);
-			if (($this->color)) {
-				imagefilledpolygon($g, $a, count($a) / 2, $c1);
-				imagestringup($g, $size, $l + $offl, $b - $offc, $this->s, $c0);
-			} else {
-				imagefilledpolygon($g, $a, count($a) / 2, $c0);
-				imagepolygon($g, $a, count($a) / 2, $c1);
-				imagestringup($g, $size, $l + $offl, $b - $offc, $this->s, $c1);
-			}
+			return $this->svgpolygon($a, $fill).$this->svgtext($l + $offc, $t + $offl, $this->s, $ink);
 		}
+		$x = $this->x + $offx;
+		$a = array($x, $t, $r, $t + 3, $r, $b - 3, $x, $b, $l, $b - 3, $l, $t + 3);
+		return $this->svgpolygon($a, $fill).$this->svgtext($l + $offl, $b - $offc, $this->s, $ink, 1);
 	}
 }
 
@@ -259,8 +244,7 @@ class	stringobject extends drawobject {
 		$this->b = $y + 11;
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c1 = imagecolorresolve($g, 0, 0, 0);
-		imagestring($g, 3, $offx + $this->l, $offy + $this->t, $this->s, $c1);
+		return $this->svgtext($offx + $this->l, $offy + $this->t, $this->s);
 	}
 }
 
@@ -275,8 +259,7 @@ class	vstringobject extends drawobject {
 		$this->b = $y + strlen($s) * 7;
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
-		$c1 = imagecolorresolve($g, 0, 0, 0);
-		imagestringup($g, 3, $offx + $this->l, $offy + $this->b, $this->s, $c1);
+		return $this->svgtext($offx + $this->l, $offy + $this->b, $this->s, "#000000", 1);
 	}
 }
 
@@ -775,18 +758,20 @@ r}}{|(#
 				$t = min($t, $obj->t);
 				$b = max($b, $obj->b);
 			}
-		$g0 = imagecreate($w = $r - $l + 32, $h = $b - $t + 32);
-#		$c0 = imagecolorresolve($g0, 255, 255, 255);
-		$c0 = imagecolorresolve($g0, 224, 224, 224);
-		imagefilledrectangle($g0, 0, 0, $w, $h, $c0);
+		$w = $r - $l + 32;
+		$h = $b - $t + 32;
+		$svg = "";
 		foreach (array($bglist, $midlist, $fglist) as $list)
 			foreach ($list as $obj)
-				$obj->draw($g0, 16 - $l, 16 - $t);
-#		header("Content-Type: image/png");
-		imagepng($g0, $tmpfn = dirname(@$argv[0])."/tmp/".getmypid());
-		imagedestroy($g0);
-		print '<img src="data:image/png;base64,'.base64_encode(file_get_contents($tmpfn)).'">'."\n";
-		unlink($tmpfn);
+				$svg .= $obj->draw(null, 16 - $l, 16 - $t)."\n";
+		print <<<EOO
+<svg xmlns="http://www.w3.org/2000/svg" width="{$w}px" height="{$h}px" viewBox="0 0 {$w} {$h}" stroke="#000000" fill="none" stroke-width="1px" stroke-linecap="square" font-family="monospace" font-size="11px">
+<rect stroke="none" fill="#e0e0e0" x="0" y="0" width="{$w}" height="{$h}" />
+<g transform="translate(0.5,0.5)">
+{$svg}</g>
+</svg>
+
+EOO;
 		die();
 	}
 	if (count($midlist) == 0)

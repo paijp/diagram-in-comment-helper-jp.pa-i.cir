@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - cir.php: add symbols placed by pin names on a 3x3 grid (op-amp, transistors, FETs, crystal, fuse, switches, relay contact, coils), each also rotated and mirrored.
 - cir.php: add two-terminal parts '{z}' '{Z}' '{s}' '{S}' and the package 'dipzvr'.
 - Regenerate cir.html: it now has a sample for each symbol.
+- cir.php: output inline SVG instead of a PNG image (GD and the tmp directory are no longer used).
 
 ## [0.0.4] - 2024-01-02
 ### Changed
