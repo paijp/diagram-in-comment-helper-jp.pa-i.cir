@@ -4,7 +4,7 @@
 
 	diagram-in-comment https://github.com/paijp/diagram-in-comment
 	
-	Copyright (c) 2023 paijp
+	Copyright (c) 2023-2025 paijp
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
@@ -59,12 +59,12 @@ class	lineobject extends drawobject {
 }
 
 
-class	boxobject extends drawobject {
+class	rectobject extends drawobject {
 	function	__construct($l, $t, $r, $b) {
-		$this->l = $l;
-		$this->t = $t;
-		$this->r = $r;
-		$this->b = $b;
+		$this->l = min($l, $r);
+		$this->t = min($t, $b);
+		$this->r = max($l, $r);
+		$this->b = max($t, $b);
 	}
 	function	draw($g, $offx = 0, $offy = 0) {
 		$c0 = imagecolorresolve($g, 255, 255, 255);
@@ -73,7 +73,112 @@ class	boxobject extends drawobject {
 		$t = $this->t + $offy;
 		$r = $this->r + $offx;
 		$b = $this->b + $offy;
-		$a = array($l, $t, $l, $b - 8, $l + 8, $b, $r, $b, $r, $t);
+		imagefilledrectangle($g, $l, $t, $r, $b, $c0);
+		imagerectangle($g, $l, $t, $r, $b, $c1);
+	}
+}
+
+
+class	rectfobject extends drawobject {
+	function	__construct($l, $t, $r, $b) {
+		$this->l = min($l, $r);
+		$this->t = min($t, $b);
+		$this->r = max($l, $r);
+		$this->b = max($t, $b);
+	}
+	function	draw($g, $offx = 0, $offy = 0) {
+		$c0 = imagecolorresolve($g, 255, 255, 255);
+		$c1 = imagecolorresolve($g, 0, 0, 0);
+		$l = $this->l + $offx;
+		$t = $this->t + $offy;
+		$r = $this->r + $offx;
+		$b = $this->b + $offy;
+		imagefilledrectangle($g, $l, $t, $r, $b, $c1);
+	}
+}
+
+
+class	ellipseobject extends drawobject {
+	function	__construct($l, $t, $r, $b) {
+		$this->l = min($l, $r);
+		$this->t = min($t, $b);
+		$this->r = max($l, $r);
+		$this->b = max($t, $b);
+	}
+	function	draw($g, $offx = 0, $offy = 0) {
+		$c0 = imagecolorresolve($g, 255, 255, 255);
+		$c1 = imagecolorresolve($g, 0, 0, 0);
+		$l = $this->l + $offx;
+		$t = $this->t + $offy;
+		$r = $this->r + $offx;
+		$b = $this->b + $offy;
+		imagefilledellipse($g, ($l + $r) / 2, ($t + $b) / 2, $r - $l, $b - $t, $c0);
+		imageellipse($g, ($l + $r) / 2, ($t + $b) / 2, $r - $l, $b - $t, $c1);
+	}
+}
+
+
+class	triangleobject extends drawobject {
+	var	$sx, $sy, $mx, $my, $ex, $ey;
+	function	__construct($sx, $sy, $mx, $my, $ex, $ey) {
+		$this->sx = $sx;
+		$this->sy = $sy;
+		$this->mx = $mx;
+		$this->my = $my;
+		$this->ex = $ex;
+		$this->ey = $ey;
+		$this->l = min($sx, $mx, $ex);
+		$this->r = max($sx, $mx, $ex);
+		$this->t = min($sy, $my, $ey);
+		$this->b = max($sy, $my, $ey);
+	}
+	function	draw($g, $offx = 0, $offy = 0) {
+		$c0 = imagecolorresolve($g, 255, 255, 255);
+		$c1 = imagecolorresolve($g, 0, 0, 0);
+		$sx = $this->sx + $offx;
+		$sy = $this->sy + $offy;
+		$mx = $this->mx + $offx;
+		$my = $this->my + $offy;
+		$ex = $this->ex + $offx;
+		$ey = $this->ey + $offy;
+		$a = array($sx, $sy, $mx, $my, $ex, $ey);
+		imagefilledpolygon($g, $a, count($a) / 2, $c0);
+		imagepolygon($g, $a, count($a) / 2, $c1);
+	}
+}
+
+
+class	boxobject extends drawobject {
+	var	$rotate;
+	
+	function	__construct($l, $t, $r, $b, $rotate = 0) {
+		$this->l = $l;
+		$this->t = $t;
+		$this->r = $r;
+		$this->b = $b;
+		$this->rotate = $rotate;
+	}
+	function	draw($g, $offx = 0, $offy = 0) {
+		$c0 = imagecolorresolve($g, 255, 255, 255);
+		$c1 = imagecolorresolve($g, 0, 0, 0);
+		$l = $this->l + $offx;
+		$t = $this->t + $offy;
+		$r = $this->r + $offx;
+		$b = $this->b + $offy;
+		switch ($this->rotate) {
+			default:
+				$a = array($l, $t, $l, $b - 8, $l + 8, $b, $r, $b, $r, $t);
+				break;
+			case	1:
+				$a = array($l, $t, $l, $b, $r - 8, $b, $r, $b - 8, $r, $t);
+				break;
+			case	2:
+				$a = array($l, $t, $l, $b, $r, $b, $r, $t + 8, $r - 8, $t);
+				break;
+			case	3:
+				$a = array($l + 8, $t, $l, $t + 8, $l, $b, $l, $b, $r, $t);
+				break;
+		}
 		imagefilledpolygon($g, $a, count($a) / 2, $c0);
 		imagepolygon($g, $a, count($a) / 2, $c1);
 	}
@@ -176,6 +281,339 @@ class	vstringobject extends drawobject {
 }
 
 
+$partsmaster = array();
+class	parts {
+	var	$key;
+	var	$val;
+	function	__construct($k, $v) {
+		$this->key = array();
+		for ($i=0; $i<9; $i++)
+			$this->key[] = substr($k, $i, 1);
+		$this->val = $v;
+		
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+		$this->rotateme();
+		$this->mirrorme();
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+		$this->rotateme();
+		$this->addme();
+	}
+	function	rotateme() {
+		list($k1, $k2, $k3, $k4, $k5, $k6, $k7, $k8, $k9) = $this->key;
+		$this->key = array($k7, $k4, $k1, $k8, $k5, $k2, $k9, $k6, $k3);
+		
+		foreach ($this->val as $k => $v) {
+			$i = 1;
+			while ($i < count($v)) {
+				$x = $v[$i];
+				$y = $v[$i + 1];
+				$v[$i++] = $y;
+				$v[$i++] = -$x;
+			}
+			$this->val[$k] = $v;
+		}
+	}
+	function	mirrorme() {
+		list($k1, $k2, $k3, $k4, $k5, $k6, $k7, $k8, $k9) = $this->key;
+		$this->key = array($k3, $k2, $k1, $k6, $k5, $k4, $k9, $k8, $k7);
+		foreach ($this->val as $k => $v) {
+			$i = 1;
+			while ($i < count($v)) {
+				$v[$i] = -$v[$i];
+				$i += 2;
+			}
+			$this->val[$k] = $v;
+		}
+	}
+	function	addme() {
+		global	$partsmaster;
+		
+		$partsmaster[implode("", $this->key)] = $this->val;
+	}
+}
+new parts(" X  Y    ", array(
+	array("rect", -8, 12, 8, 4), 
+	array("rectf", -8, 0, 8, 1), 
+	array("rectf", -8, 15, 8, 16)
+));
+new parts(" C     A ", array(
+	array("ellipse", -4, -20, 4, -12), 
+	array("ellipse", -4, 12, 4, 20), 
+	array("line", 2, 12, 12, -20)
+));
+new parts(" C  A    ", array(
+	array("ellipse", -4, 12, 4, 20), 
+	array("ellipse", -4, -4, 4, 4), 
+	array("line", 2, 12, 12, -4)
+));
+new parts(" C    A B", array(
+	array("ellipse", -20, -20, -12, -12), 
+	array("ellipse", 12, -20, 20, -12), 
+	array("ellipse", -4, 12, 4, 20), 
+	array("line", 2, 12, 12, -20)
+));
+new parts("ACB      ", array(
+	array("ellipse", -20, 12, -12, 20), 
+	array("ellipse", -4, 12, 4, 20), 
+	array("ellipse", 12, 12, 20, 20), 
+	array("line", 1, 12, 8, -20), 
+	array("line", -16, -20, -8, -16), 
+	array("line", -8, -16, -16, -12), 
+	array("line", -16, -12, -16, 12), 
+	array("line", 16, -20, 8, -16), 
+	array("line", 8, -16, 16, -12), 
+	array("line", 16, -12, 16, 12)
+));
+new parts("NG   OPV ", array(
+	array("triangle", -20, -24, 28, 0, -20, 24), 
+	array("line", -16, -14, -12, -14), 
+	array("line", -14, -16, -14, -12), 
+	array("line", -16, 14, -12, 14)
+));
+new parts("  NB    C", array(
+	array("ellipse", -10, -18, 26, 18), 
+	array("rectf", -2, -12, 0, 12), 
+	array("line", 16, -16, 0, 0), 
+	array("line", 16, 16, 0, 0), 
+	array("line", 16, 16, 10, 14), 
+	array("line", 16, 16, 14, 10), 
+	array("line", -16, 0, 0, 0)
+));
+new parts("  PB    C", array(
+	array("ellipse", -10, -18, 26, 18), 
+	array("rectf", -2, -12, 0, 12), 
+	array("line", 16, -16, 0, 0), 
+	array("line", 16, 16, 0, 0), 
+	array("line", 2, 6, 0, 0), 
+	array("line", 6, 2, 0, 0), 
+	array("line", -16, 0, 0, 0)
+));
+new parts("  SP    D", array(
+	array("ellipse", -10, -18, 26, 18), 
+	array("rectf", 2, -12, 4, 12), 
+	array("line", 16, -16, 16, -9), 
+	array("line", 2, -9, 16, -9), 
+	array("line", 16, 16, 16, 9), 
+	array("line", 2, 9, 16, 9), 
+	array("line", 2, 0, -4, -2), 
+	array("line", 2, 0, -4, 2), 
+	array("line", -16, 0, 2, 0)
+));
+new parts("  SN    D", array(
+	array("ellipse", -10, -18, 26, 18), 
+	array("rectf", 2, -12, 4, 12), 
+	array("line", 16, -16, 16, -9), 
+	array("line", 2, -9, 16, -9), 
+	array("line", 16, 16, 16, 9), 
+	array("line", 2, 9, 16, 9), 
+	array("line", -10, 0, -4, -2), 
+	array("line", -10, 0, -4, 2), 
+	array("line", -16, 0, 2, 0)
+));
+new parts("G N     D", array(
+	array("ellipse", -12, -18, 24, 18), 
+	array("rectf", 4, -18, 6, -10), 
+	array("rectf", 4, -4, 6, 4), 
+	array("rectf", 4, 10, 6, 18), 
+	array("line", 6, -15, 16, -15), 
+	array("line", 6, 0, 16, 0), 
+	array("line", 16, 0, 16, 16), 
+	array("line", 6, 15, 16, 15), 
+	array("line", 6, 0, 12, -2), 
+	array("line", 6, 0, 12, 2), 
+	array("line", -16, 16, -3, 16), 
+	array("line", -3, -12, -3, 16)
+));
+new parts("  N   G D", array(
+	array("ellipse", -12, -18, 24, 18), 
+	array("rectf", 4, -18, 6, -10), 
+	array("rectf", 4, -4, 6, 4), 
+	array("rectf", 4, 10, 6, 18), 
+	array("line", 6, -15, 16, -15), 
+	array("line", 6, 0, 16, 0), 
+	array("line", 16, 0, 16, 16), 
+	array("line", 6, 15, 16, 15), 
+	array("line", 6, 0, 12, -2), 
+	array("line", 6, 0, 12, 2), 
+	array("line", -16, -16, -3, -16), 
+	array("line", -3, -16, -3, 12)
+));
+new parts("G P     D", array(
+	array("ellipse", -12, -18, 24, 18), 
+	array("rectf", 4, -18, 6, -10), 
+	array("rectf", 4, -4, 6, 4), 
+	array("rectf", 4, 10, 6, 18), 
+	array("line", 6, -15, 16, -15), 
+	array("line", 6, 0, 16, 0), 
+	array("line", 16, 0, 16, 16), 
+	array("line", 6, 15, 16, 15), 
+	array("line", 16, 0, 10, -2), 
+	array("line", 16, 0, 10, 2), 
+	array("line", -16, 16, -3, 16), 
+	array("line", -3, -12, -3, 16)
+));
+new parts("  P   G D", array(
+	array("ellipse", -12, -18, 24, 18), 
+	array("rectf", 4, -18, 6, -10), 
+	array("rectf", 4, -4, 6, 4), 
+	array("rectf", 4, 10, 6, 18), 
+	array("line", 6, -15, 16, -15), 
+	array("line", 6, 0, 16, 0), 
+	array("line", 16, 0, 16, 16), 
+	array("line", 6, 15, 16, 15), 
+	array("line", 16, 0, 10, -2), 
+	array("line", 16, 0, 10, 2), 
+	array("line", -16, -16, -3, -16), 
+	array("line", -3, -16, -3, 12)
+));
+new parts("L MB  A  ", array(
+	array("ellipse", -20, 12, -12, 20), 
+	array("ellipse", 12, 12, 20, 20), 
+	array("line", -18, 12, -18, 0), 
+	array("line", -18, 0, -15, -3), 
+	array("line", -15, -3, -12, -3), 
+	array("line", -12, -3, -6, 3), 
+	array("line", -6, 3, -6, 9), 
+	array("line", -6, 9, -9, 12), 
+	array("line", -9, 12, -12, 9), 
+	array("line", -12, 9, -12, 3), 
+	array("line", -12, 3, -6, -3), 
+	array("line", -6, -3, -3, -3), 
+	array("line", -3, -3, 3, 3), 
+	array("line", 3, 3, 3, 9), 
+	array("line", 3, 9, 0, 12), 
+	array("line", 0, 12, -3, 9), 
+	array("line", -3, 9, -3, 3), 
+	array("line", -3, 3, 3, -3), 
+	array("line", 3, -3, 6, -3), 
+	array("line", 6, -3, 12, 3), 
+	array("line", 12, 3, 12, 9), 
+	array("line", 12, 9, 9, 12), 
+	array("line", 9, 12, 6, 9), 
+	array("line", 6, 9, 6, 3), 
+	array("line", 6, 3, 12, -3), 
+	array("line", 12, -3, 15, -3), 
+	array("line", 15, -3, 18, 0), 
+	array("line", 18, 0, 18, 12), 
+	array("line", -24, -6, 24, -6), 
+	array("line", -24, -10, 24, -10)
+));
+new parts("LMNB  A  ", array(
+	array("ellipse", -20, 12, -12, 20), 
+	array("ellipse", -4, 12, 4, 20), 
+	array("ellipse", 12, 12, 20, 20), 
+	array("line", -18, 12, -18, 0), 
+	array("line", -18, 0, -15, -3), 
+	array("line", -15, -3, -12, -3), 
+	array("line", -12, -3, -6, 3), 
+	array("line", -6, 3, -6, 9), 
+	array("line", -6, 9, -9, 12), 
+	array("line", -9, 12, -12, 9), 
+	array("line", -12, 9, -12, 3), 
+	array("line", -12, 3, -6, -3), 
+	array("line", -6, -3, -3, -3), 
+	array("line", -3, -3, 3, 3), 
+	array("line", 3, 3, 3, 9), 
+	array("line", 3, 9, 0, 12), 
+	array("line", 0, 12, -3, 9), 
+	array("line", -3, 9, -3, 3), 
+	array("line", -3, 3, 3, -3), 
+	array("line", 3, -3, 6, -3), 
+	array("line", 6, -3, 12, 3), 
+	array("line", 12, 3, 12, 9), 
+	array("line", 12, 9, 9, 12), 
+	array("line", 9, 12, 6, 9), 
+	array("line", 6, 9, 6, 3), 
+	array("line", 6, 3, 12, -3), 
+	array("line", 12, -3, 15, -3), 
+	array("line", 15, -3, 18, 0), 
+	array("line", 18, 0, 18, 12), 
+	array("line", -24, -6, 24, -6), 
+	array("line", -24, -10, 24, -10)
+));
+new parts("CLMB  A  ", array(
+	array("ellipse", -4, 12, 4, 20), 
+	array("ellipse", 12, 12, 20, 20), 
+	array("line", 0, 12, 0, 0), 
+	array("line", 0, 0, 4, -4), 
+	array("line", 4, -4, 6, -4), 
+	array("line", 6, -4, 12, 2), 
+	array("line", 12, 2, 12, 8), 
+	array("line", 12, 8, 8, 12), 
+	array("line", 8, 12, 4, 8), 
+	array("line", 4, 8, 4, 2), 
+	array("line", 4, 2, 10, -4), 
+	array("line", 10, -4, 12, -4), 
+	array("line", 12, -4, 16, 0), 
+	array("line", 16, 0, 16, 12), 
+	array("line", -8, -6, 24, -6), 
+	array("line", -8, -10, 24, -10)
+));
+new parts("   F G   ", array(
+	array("ellipse", -20, -4, -12, 4), 
+	array("ellipse", 12, -4, 20, 4), 
+	array("line", -12, 0, -8, -4), 
+	array("line", -8, -4, -4, -4), 
+	array("line", -4, -4, 4, 4), 
+	array("line", 4, 4, 8, 4), 
+	array("line", 8, 4, 12, 0)
+));
+new parts("K E   A C", array(
+	array("line", -16, -16, -16, -4), 
+	array("line", -20, -4, -12, -4), 
+	array("line", -20, -4, -16, 4), 
+	array("line", -12, -4, -16, 4), 
+	array("line", -20, 4, -12, 4), 
+	array("line", -16, 4, -16, 16), 
+	array("line", 16, -16, 16, -8), 
+	array("line", 16, -8, 8, 0), 
+	array("line", 8, 0, 16, 8), 
+	array("line", 16, 8, 16, 16), 
+	array("line", 8, -8, 8, 8), 
+	array("line", 16, 8, 16, 4), 
+	array("line", 16, 8, 12, 8), 
+	array("line", -12, 0, -4, -2), 
+	array("line", -4, -2, -8, 2), 
+	array("line", -8, 2, 4, 0), 
+	array("line", 0, -2, 4, 0), 
+	array("line", 0, 2, 4, 0)
+));
+new parts(" W C   V ", array(
+	array("line", 0, 16, 6, 12), 
+	array("line", 6, 12, -6, 6), 
+	array("line", -6, 6, 6, 0), 
+	array("line", 6, 0, -6, -6), 
+	array("line", -6, -6, 6, -12), 
+	array("line", 6, -12, 0, -16), 
+	array("line", -16, 0, -6, 0), 
+	array("line", -12, 4, -6, 0), 
+	array("line", -12, -4, -6, 0)
+));
+new parts(" V C W X ", array(
+	array("line", 0, 16, 6, 12), 
+	array("line", 6, 12, -6, 6), 
+	array("line", -6, 6, 6, 0), 
+	array("line", 6, 0, -6, -6), 
+	array("line", -6, -6, 6, -12), 
+	array("line", 6, -12, 0, -16), 
+	array("line", -16, 0, -6, 0), 
+	array("line", -12, 4, -6, 0), 
+	array("line", -12, -4, -6, 0), 
+	array("rectf", 5, -1, 7, 1), 
+	array("line", 6, 0, 16, 0)
+));
+
+
 $fglist = array();
 $midlist = array();
 $bglist = array();
@@ -194,6 +632,7 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 ( 
 {(sip
 |(dip
+|(dipzv
 |(qfp
 }[num
 {|(
@@ -205,6 +644,12 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 |(8
 |((
 |()
+|(<
+[name
+(>
+|(<<
+[name
+(>
 |([
 [name
 (]
@@ -223,6 +668,39 @@ foreach (preg_split("/\r\n|\r|\n/", stream_get_contents(STDIN)) as $line) {
 |({D
 [name
 (}
+|({
+{(1
+|(2
+|(3
+|(4
+|(5
+|(6
+|(7
+|(8
+|(9
+}
+[pinname
+{|{(1
+|(2
+|(3
+|(4
+|(5
+|(6
+|(7
+|(8
+|(9
+}
+[pinname
+}
+{|{(1
+|(3
+|(5
+|(7
+|(9
+}[pinname
+r}
+|[pinname
+|(}
 r}}{|(#
 {|[comment
 }}
@@ -248,6 +726,22 @@ r}}{|(#
 					$poslist[] = array(8 + 8 * $i, 40);
 				while (($i -= 2) >= 0)
 					$poslist[] = array(8 + 8 * $i, 8);
+				break;
+			case	"dipzv":
+				$midlist[] = new boxobject(0, 0, 32, 8 * $num);
+				$fglist[] = new vstringobject(12, 8 * $num - 16 - strlen($par) * 7, $par);
+				for ($i=0; $i<$num; $i+=2) {
+					$poslist[] = array(8, 8 * ($num - $i) - 8);
+					$poslist[] = array(24, 8 * ($num - $i) - 8);
+				}
+				break;
+			case	"dipzvr":
+				$midlist[] = new boxobject(0, 0, 32, 8 * $num, 2);
+				$fglist[] = new vstringobject(12, 8 * $num - 16 - strlen($par) * 7, $par);
+				for ($i=0; $i<$num; $i+=2) {
+					$poslist[] = array(24, 8 * $i + 8);
+					$poslist[] = array(8, 8 * $i + 8);
+				}
 				break;
 			case	"qfp":
 				$midlist[] = new boxobject(0, 0, $w = 4 * $num, $h = 4 * $num);
@@ -302,12 +796,15 @@ r}}{|(#
 	list($x, $y) = array_shift($poslist);
 	$vx = $vy = 0;
 	$stack = array();
+	$posnamestack = array();
 	while (($c = substr($line, 0, 1)) != "") {
 		$line = substr($line, 1);
 		$x0 = $x;
 		$y0 = $y;
 		switch ($c) {
 			default:
+				if (($a = @$posnamestack[0][$c]) !== null)
+					list($x, $y) = $a;
 				continue 2;
 			case	"2":
 				$bglist[] = new lineobject($x0, $y0, $x += ($vx = 0) * 16, $y += ($vy = 1) * 16);
@@ -323,11 +820,11 @@ r}}{|(#
 				continue 2;
 			case	"(":
 				$bglist[] = new dotobject($x, $y);
-				$stack[] = array($x, $y, $x0, $y0, $vx, $vy);
+				$stack[] = array($x, $y, $vx, $vy);
 				continue 2;
 			case	")":
 				if (count($stack) > 0)
-					list($x, $y, $x0, $y0, $vx, $vy) = array_pop($stack);
+					list($x, $y, $vx, $vy) = array_pop($stack);
 				continue 2;
 			case	"<":
 				list($s, $line) = explode(">", $line, 2);
@@ -353,9 +850,67 @@ r}}{|(#
 				$x += $vx * $len;
 				$y += $vy * $len;
 				continue 2;
+			case	"}":
+				array_shift($posnamestack);
+				continue 2;
 			case	"{":
+				$c = substr($line, 0, 1);
+				
+				if ((int)$c >= 1) {
+					$x -= (($c - 1) % 3) * 16 - 16;
+					$y += (int)floor(($c - 1) / 3) * 16 - 16;
+					$key = array();
+					$count = 0;
+					$lastname = "";
+					for (;;) {
+						$c = (int)substr($line, 0, 1);
+						if ($c < 1)
+							break;
+						if (($count >= 2)&&(($c & 1) == 0))
+							break;
+						$key[$c] = $lastname = substr($line, 1, 1);
+						$line = substr($line, 2);
+						$count++;
+					}
+					$line = $lastname.$line;
+					foreach ($partsmaster as $k => $v) {
+						foreach ($key as $k0 => $v0)
+							if (substr($k, $k0 - 1, 1) != $v0)
+								continue 2;
+						$a = array();
+						for ($i=0; $i<9; $i++) {
+							if (($c = substr($k, $i, 1)) == " ")
+								continue;
+							if ($c == "")
+								continue;
+							$x0 = $x - 16 + ($i % 3) * 16;
+							$y0 = $y + 16 - (int)floor($i / 3) * 16;
+							$a[$c] = array($x0, $y0);
+						}
+						array_unshift($posnamestack, $a);
+						foreach ($v as $a)
+							switch ($a[0]) {
+								case	"line":
+									$midlist[] = new lineobject($a[1] + $x, $a[2] + $y, $a[3] + $x, $a[4] + $y);
+									break;
+								case	"rect":
+									$midlist[] = new rectobject($a[1] + $x, $a[2] + $y, $a[3] + $x, $a[4] + $y);
+									break;
+								case	"rectf":
+									$midlist[] = new rectfobject($a[1] + $x, $a[2] + $y, $a[3] + $x, $a[4] + $y);
+									break;
+								case	"ellipse":
+									$midlist[] = new ellipseobject($a[1] + $x, $a[2] + $y, $a[3] + $x, $a[4] + $y);
+									break;
+								case	"triangle":
+									$midlist[] = new triangleobject($a[1] + $x, $a[2] + $y, $a[3] + $x, $a[4] + $y, $a[5] + $x, $a[6] + $y);
+									break;
+							}
+						break;
+					}
+					continue 2;
+				}
 				list($s, $line) = explode("}", $line, 2);
-				$c = substr($s, 0, 1);
 				$s = substr($s, 1);
 				
 				if ($s == "")
@@ -396,6 +951,50 @@ r}}{|(#
 						$list[] = array(12, -4, 12, 4);
 						$list[] = array(12, 0, 16, 0);
 						break;
+					case	"z":
+						$list[] = array(0, 0, 4, 0);
+						$list[] = array(4, -4, 4, 4);
+						$list[] = array(4, -4, 12, 0);
+						$list[] = array(4, 4, 12, 0);
+						$list[] = array(12, -4, 12, 4);
+						$list[] = array(12, -4, 10, -4);
+						$list[] = array(12, 4, 14, 4);
+						$list[] = array(12, 0, 16, 0);
+						break;
+					case	"Z":
+						$list[] = array(0, 0, 4, 0);
+						$list[] = array(4, -4, 4, 4);
+						$list[] = array(4, -4, 2, -4);
+						$list[] = array(4, 4, 6, 4);
+						$list[] = array(4, 0, 12, -4);
+						$list[] = array(4, 0, 12, 4);
+						$list[] = array(12, -4, 12, 4);
+						$list[] = array(12, 0, 16, 0);
+						break;
+					case	"s":
+						$list[] = array(0, 0, 4, 0);
+						$list[] = array(4, -4, 4, 4);
+						$list[] = array(4, -4, 12, 0);
+						$list[] = array(4, 4, 12, 0);
+						$list[] = array(12, -4, 12, 4);
+						$list[] = array(12, -4, 10, -4);
+						$list[] = array(10, -2, 10, -4);
+						$list[] = array(12, 4, 14, 4);
+						$list[] = array(14, 2, 14, 4);
+						$list[] = array(12, 0, 16, 0);
+						break;
+					case	"S":
+						$list[] = array(0, 0, 4, 0);
+						$list[] = array(4, -4, 4, 4);
+						$list[] = array(4, -4, 2, -4);
+						$list[] = array(2, -2, 2, -4);
+						$list[] = array(4, 4, 6, 4);
+						$list[] = array(6, 2, 6, 4);
+						$list[] = array(4, 0, 12, -4);
+						$list[] = array(4, 0, 12, 4);
+						$list[] = array(12, -4, 12, 4);
+						$list[] = array(12, 0, 16, 0);
+						break;
 				}
 				$ex0 = $x;
 				$ey0 = $y;
@@ -417,6 +1016,24 @@ r}}{|(#
 
 /*jp.pa-i/html
 <pre>
+<h1>direction</h1><p>same as tenkey.</p>
+*/
+/*jp.pa-i.cir/cir qfp12
+24<<1>
+2<<2>
+26<<3>
+
+66<<6>
+
+86<<9>
+8<<8>
+84<<7>
+
+44<<4>
+*/
+
+
+/*jp.pa-i/html
 <h1>SIP</h1>
 /*jp.pa-i.cir/cir sip3 U1
 22(4[VOUT])2{c104}2[[G]
@@ -462,6 +1079,221 @@ r}}{|(#
 44[P18]
 44[P19]
 44[P20]
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an opamp.</h1><p>7(left-top)=P, and 1(left-bottom)=N.</p>
+/*jp.pa-i.cir/cir qfp4
+
+6<<7=P>6{7P1N4<<1=N>V8<<8=V>G2<<2=G>O6<<6=O>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>rotate and mirror an opamp.</h1><p>7(left-top)=P, and 9(right-top)=N.</p>
+/*jp.pa-i.cir/cir qfp4
+2<<7=P>2{7P9N8<<9=N>V4<<4=V>G6<<6=G>O2<<2=O>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an Nch Tr.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=B>6{4B3N2<<3=N>C8<<9=C>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an Pch Tr.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=B>6{4B3P2<<3=P>C8<<9=C>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an Nch JFET.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=P>6{4P3S2<<3=S>D8<<9=D>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a Pch JFET.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=N>6{4N3S2<<3=S>D8<<9=D>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an Nch MOS-FET.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<1=G>6{1G3N2<<3=N>D8<<9=D>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of an Pch MOS-FET.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<1=G>6{1G3P2<<3=P>D8<<9=D>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a xtal.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=X>6{4X5Y6<<5=Y>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a fuse.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=F>6{4F6G6<<6=G>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a small switch.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C5A6<<5=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a switch.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C6A6<<6=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a bi-directional switch.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C9A6<<9=A>B6<<3=B>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a relay contact.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C7A4<<7=A>B4<<1=B>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a coil.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<7=L>6{7L1M4<<1=M>B8<<8=B>A8<<9=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a tapped coil.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<7=L>6{7L1N4<<1=N>M4<<4=M>B8<<8=B>A8<<9=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a half coil.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=L>6{4L1M4<<1=M>C8<<7=C>B8<<8=B>A8<<9=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>How to draw a relay(coil first).</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<7=L>6{7L1M4<<1=M>A{7A8C8<<8=C>B8<<9=B>A8<<7=A>}}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>How to draw a relay(contact first).</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C7A4<<7=A>B4<<1=B>A{1A7L8<<7=L>M8<<9=M>}}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>How to draw a transformer.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<7=L>6{7L1M4<<1=M>A{8B6M6<<6=M>L6<<9=L>N6<<3=N>}}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>How to draw a transformer(multi).</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=L>6{4L1M4<1=M>C}{1M4L4<4=L>M4<1=M>C}{1M4L4<4=L>M4<1=M>A}{8B6L6<6=L>M6<3=M>M}{9C6L6<6=L>M6<3=M>M}{6L3M6<3=M>M}{6L3M6<3=M>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a photo coupler.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<1=K>6{1K3E6<<3=E>C6<<9=C>A4<<7=A>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a volume.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C8V8<<8=V>W2<<2=W>}
+#<h1>&darr;</h1>
+*/
+
+
+/*jp.pa-i/html
+<h1>Pinname of a tapped volume.</h1>
+/*jp.pa-i.cir/cir qfp4
+
+6<<4=C>6{4C2X2<<2=X>V8<<8=V>W6<<6=W>}
 #<h1>&darr;</h1>
 */
 
