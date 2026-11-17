@@ -535,9 +535,10 @@ $ php pcbgrid20.php --ql800 '' comment &lt;input.c |nc 192.168.0.123 9100		# wit
 
 #header("Content-Type: image/png");
 #imagepng($g0);
-imagepng($g0, $tmpfn = dirname(@$argv[0])."/tmp/".getmypid());
+ob_start();
+imagepng($g0);
+$png = ob_get_clean();
 imagedestroy($g0);
-print '<img src="data:image/png;base64,'.base64_encode(file_get_contents($tmpfn)).'">'."\n";
-unlink($tmpfn);
+print '<img src="data:image/png;base64,'.base64_encode($png).'">'."\n";
 
 

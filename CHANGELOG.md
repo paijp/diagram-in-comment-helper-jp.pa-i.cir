@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - cir.php: add two-terminal parts '{z}' '{Z}' '{s}' '{S}' and the package 'dipzvr'.
 - Regenerate cir.html: it now has a sample for each symbol.
 - cir.php: output inline SVG instead of a PNG image (GD and the tmp directory are no longer used).
+- cir.php: bold text in the SVG.
+- pcbgrid20.php: build the PNG in memory instead of in a file.
+### Removed
+- The tmp directory: nothing writes a temporary file any more.
 
 ## [0.0.4] - 2024-01-02
 ### Changed

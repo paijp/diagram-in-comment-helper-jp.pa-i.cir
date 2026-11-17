@@ -765,7 +765,7 @@ r}}{|(#
 			foreach ($list as $obj)
 				$svg .= $obj->draw(null, 16 - $l, 16 - $t)."\n";
 		print <<<EOO
-<svg xmlns="http://www.w3.org/2000/svg" width="{$w}px" height="{$h}px" viewBox="0 0 {$w} {$h}" stroke="#000000" fill="none" stroke-width="1px" stroke-linecap="square" font-family="monospace" font-size="11px">
+<svg xmlns="http://www.w3.org/2000/svg" width="{$w}px" height="{$h}px" viewBox="0 0 {$w} {$h}" stroke="#000000" fill="none" stroke-width="1px" stroke-linecap="square" font-family="monospace" font-size="11px" font-weight="bold">
 <rect stroke="none" fill="#e0e0e0" x="0" y="0" width="{$w}" height="{$h}" />
 <g transform="translate(0.5,0.5)">
 {$svg}</g>
